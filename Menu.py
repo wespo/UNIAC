@@ -3,6 +3,7 @@ import RPi.GPIO as GPIO
 import time
 
 version = "0.01a"
+
 class menu:
     #class for system menu, rotates through menu items by calling changeMode(1 for button up, -1 for button down).
     #'mode' is a special case button that moves to the next menu -- see the buttonPress method
@@ -14,7 +15,12 @@ class menu:
         self.systemLock = False #flag to keep display function from colliding with MPD
         self.pressTime = int(time.time())
         self.button_lights = 5
+        self.button_light_status = True
         self.button_timeout = 5
+        #temporary amplifier perma-on:
+        self.amp = 4
+        GPIO.setup(self.amp, GPIO.OUT)
+        GPIO.output(self.amp, True)
     #mode handlers    
     def attachMode(self, item):
         self.modes.append(item)
@@ -29,6 +35,26 @@ class menu:
             self.modes.insert(0, self.modes.pop())
         elif(direction == 1): #mode up (rotate array left)
             self.modes.append(self.modes.pop(0))
+        if hasattr(self.modes[0],'startHandler'):
+            self.modes[0].startHandler()
+        self.modes[0].displayHandler()
+    #rotates through the list until if finds a default mode.
+    #a menu page with a 'default' attribute is one that we want to land on when the system goes idle
+    #if it is already on such a page, it will do nothing, but if not if will cycle through pages until
+    #it finds a page with the default attribute
+    def defaultMode(self, direction = 1):
+        if hasattr(self.modes[0],'defaultMenu'): #are we already on a default menu?
+                return
+        if hasattr(self.modes[0],'stopHandler'):
+            #If the current menu is not a default,
+            #we're going to have to change. Call
+            #the stop handler if there is one
+            self.modes[0].stopHandler()
+        while (hasattr(self.modes[0],'defaultMenu') == False):
+            if(direction == -1): #mode down (rotate array right)
+                self.modes.insert(0, self.modes.pop())
+            elif(direction == 1): #mode up (rotate array left)
+                self.modes.append(self.modes.pop(0))
         if hasattr(self.modes[0],'startHandler'):
             self.modes[0].startHandler()
         self.modes[0].displayHandler()
@@ -51,6 +77,7 @@ class menu:
     def buttonPress(self, channel): #only one interrupt for the pedal, so we have to check if the pedal is falling or rising and call the right handler
         self.pressTime = int(time.time())
         GPIO.output(self.button_lights, True)
+        self.button_light_status = True
 
         #check that bounce settled
         inputState1 = False
@@ -72,15 +99,20 @@ class menu:
             self.systemLock = False
     def buttonRead(self, channel):
         return GPIO.input(channel)
-    
     #display handler
     def displayUpdate(self):    #function updates the display with the current handler
         while self.systemLock == True:
             pass
         try:
-            if((int(time.time()) - self.pressTime) > self.button_timeout):
+            if(((int(time.time()) - self.pressTime) > self.button_timeout) and (self.button_light_status == True)):
                 GPIO.output(self.button_lights, False)
+                self.button_light_status = False
+                self.defaultMode()
             self.modes[0].displayHandler()
+            if self.modes[0].playStatus():
+                GPIO.output(self.amp, True)
+            else:
+                GPIO.output(self.amp, False)
             for eventFunction in self.eventFunctions:
                 eventFunction()
         except:

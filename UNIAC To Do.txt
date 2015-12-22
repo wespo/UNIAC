@@ -1,0 +1,11 @@
+UNIAC To Do:
+1. Fix voice bug where when running as root, the script will not play the first sound called by the menu.
+2. Fix startup issues (UNIAC.py does not start, multiple instances of UNIAC and Mopidy)
+3. Add decimal point hardware
+4. Add decimal point support in software
+5. Add paper mask to faceplate
+6. Add 3.3 GPIO shutdown ouptupt lead for amplifier
+7. Replace DROK amp with Adafruit class D.
+8. Fix MPD Disconnect issues
+9. Mill new back panel to fit enclosure
+10. Alarm go off voice mute issue.
