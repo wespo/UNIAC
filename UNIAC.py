@@ -12,6 +12,17 @@ ESPEAK_USER = 'pi'
 import os
 print 'Starting UNIAC: The Ultimate NIxie Alarm Clock'
 print 'Model: UNIAC-S900-Vu-Pro'
+
+def UNIACPS():
+    pythonProcesses = os.popen('ps -e | grep python').readlines()
+    pythonProcesses.pop()
+    for process in pythonProcesses:
+        psNum = str.split(process)[0]
+        print "killing: " + psNum
+        os.system('sudo kill ' + psNum)
+        
+UNIACPS()
+
 # use_unicode will enable the utf-8 mode for python2
 # see http://pythonhosted.org/python-mpd2/topics/advanced.html#unicode-handling
 client = mpd.MPDClient(use_unicode=True)
@@ -209,20 +220,28 @@ class mpdGeneral: #general purpose class for MPD interfaces
             currentStatus = client.status()
         return client.status()['time'].split(':')
     def setRandom(self, value): #-1 to toggle
+        client.random(self.setParam('random', value))
+    def getRandom(self):
+        return self.getParam('random') #current value
+    def setRepeat(self, value): #-1 to toggle
+        client.repeat(self.setParam('repeat', value))
+    def getRepeat(self):
+        return self.getParam('repeat') #current value
+    def setParam(self, param, value): #-1 to toggle
         self.clientStatus()
         currentStatus = client.status()
-        while 'random' not in currentStatus:
+        while param not in currentStatus:
             currentStatus = client.status()
         if value == -1:
-            value = int(not(int(client.status()['random']))) #negate current value
+            value = int(not(int(client.status()[param]))) #negate current value
         if value == 1 or value == 0:
-            client.random(value)
-    def getRandom(self):
+            return value
+    def getParam(self, param):
         self.clientStatus()
         currentStatus = client.status()
-        while 'random' not in currentStatus:
+        while param not in currentStatus:
             currentStatus = client.status()
-        return int(currentStatus['random']) #current value
+        return int(currentStatus[param]) #current value
     def getXfade(self):
         self.clientStatus()
         return int(client.status()['xfade']) #current value
@@ -255,9 +274,11 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
                 alarm.alarmEnabled = False
                 alarm.playing = False
                 print "Alarm Disabled"
+                nixie.setDecimal(0,False)
             else:
                 alarm.alarmEnabled = True
                 print "Alarm Enabled"
+                nixie.setDecimal(0,True)
     def snooze(self, direction):
         if direction == -1 and alarm.playing:
             alarm.minutes = alarm.minutes + alarm.snoozeTime
@@ -279,13 +300,15 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
     def alarmEvent(self):
         #print str(time.localtime().tm_hour) + " " + str(time.localtime().tm_min) + " " + str(time.localtime().tm_sec) + " : " + str(alarm.hours) + " " + str(alarm.minutes) + " " + str(alarm.seconds) + " : " + str(alarm.playing) + " " + str(alarm.alarmEnabled)
         if alarm.playing:
-            return
+            return False
         elif time.localtime().tm_hour == alarm.hours and time.localtime().tm_min == alarm.minutes and alarm.playing == False and alarm.alarmEnabled:
             alarm.playing = True
             print "Alarm Trigger"
             #play alarm
-            announce("It is " +  time.strftime('%H, %M, %p.'), True)
             self.play(-1)
+            announce("It is " +  time.strftime('%H, %M.'), False)
+            return True
+        return False
     def changeAlarmHours(self,direction):
         if direction == -1 or direction == 1:
             self.setAlarmTime(alarm.hours + direction, alarm.minutes, alarm.seconds)
@@ -298,11 +321,24 @@ class alarmClock (alarmGeneral, mpdGeneral):
     def __init__(self):
         self.buttonHandlers = {'select':self.nextOption, 'minus':self.decValue,'plus':self.incValue, 'playpause':self.playPause,'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.selected = 1
+        self.alarmTwelveHour = Config.readParam('twelveHour', True, True)
     def eventFunction(self):
-        self.alarmEvent()
+        return self.alarmEvent()
     def displayHandler(self):
         alarmTime = self.getAlarmTime()
-        nixie.printTubes(alarmTime['hours']*10000 + alarmTime['minutes']*100)
+        localHours = alarmTime['hours']
+        if self.alarmTwelveHour:
+            if localHours > 11:
+                nixie.setSpare(0, True)
+                if localHours > 12:
+                    localHours = localHours - 12
+            else:
+                if localHours == 0:
+                    localHours = 12
+                nixie.setSpare(0, False)
+            nixie.printTubes(localHours*10000 + alarmTime['minutes']*100,2)
+        else:
+            nixie.printTubes(localHours*10000 + alarmTime['minutes']*100)
     def nextOption(self,direction):
         if direction == -1:
             nixie.stopBlinking(self.selected)
@@ -330,17 +366,37 @@ class alarmClock (alarmGeneral, mpdGeneral):
         nixie.startBlinking(self.selected)
     def stopHandler(self):
         nixie.stopAllBlinking()
-        
+        nixie.setSpare(0, False)
+    def twelveHourMode(self, onOff):
+        if onOff == True or onOff == False:
+            self.alarmTwelveHour = onOff
+            Config.writeParam('twelveHour', self.alarmTwelveHour)
+        return self.alarmTwelveHour
 
 class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
     def __init__(self):
         self.buttonHandlers = {'playpause':self.playPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.defaultMenu = 'default'
+        self.twelveHour = Config.readParam('twelveHour', True, True)
     def displayHandler(self):
-        timeNum = int(time.strftime('%H%M%S')) #%I for 12-hour mode
+        if self.twelveHour:
+            timeNum = int(time.strftime('%I%M%S')) #%I for 12-hour mode
+            if time.strftime('%p') == 'PM':
+                nixie.setSpare(0,True)
+            else:
+                nixie.setSpare(0,False)
+        else:
+            timeNum = int(time.strftime('%H%M%S')) #%H for 24-hour mode
         if(timeNum < 10000):
             timeNum = timeNum + 1000000 #add leading zeros for midnight so it shows 00 for hours (the 1 is offscreen)
         nixie.printTubes(timeNum, 2)
+    def stopHandler(self):
+        nixie.setSpare(0,False)
+    def twelveHourMode(self, onOff=None):
+        if onOff == True or onOff == False:
+            self.twelveHour = onOff
+            Config.writeParam('twelveHour', self.twelveHour)
+        return self.twelveHour
 
 class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / remaining time)
     def __init__(self):
@@ -566,7 +622,7 @@ class optionMenu (mpdGeneral, alarmGeneral):
     def displayHandler(self):
         disp = ''
         for option in self.options:
-            disp = disp + str(option.value)
+            disp = disp + str(int(option.value))
         nixie.printTubes(int(disp))
     def nextOption(self,direction):
         if direction == -1:
@@ -593,6 +649,14 @@ class optionMenu (mpdGeneral, alarmGeneral):
             #Now set the value
             self.options[self.selected].setter(tempValue)
 
+def callTwelveHour(value=None):
+    retVal = value
+    for menuItem in Menu.modes:
+        if hasattr(menuItem, 'twelveHourMode'):
+            retVal = menuItem.twelveHourMode(value)
+    return retVal
+        
+
 Menu.attachMode(nixieClock())           #clock
 Menu.attachMode(mpdStatus())            #spotify playing mode
 #alarm.alarmEnabled = bool(Menu.buttonRead(buttons['alarmenable'])) #Special case. In this clock, the system is a mechanical toggle, so it needs to be detected on startup
@@ -600,7 +664,9 @@ Menu.attachMode(alarmClock())           #alarm clock
 Menu.attachMode(selectPlaylist())       #playlists
 #Menu.attachMode(selectStation())        #radio stations
 #Menu.modes.pop()
-options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRandom)] # each option is unique. Add each one to handle things. could be cleaner
+options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRandom),
+           option('repeat', 0, 1, 0, mpdGeneral().getRepeat, mpdGeneral().setRepeat),
+           option('twelve hour mode', 0, 1, 1, callTwelveHour, callTwelveHour)] # each option is unique. Add each one to handle things. could be cleaner
 Menu.attachMode(optionMenu(options))    #options
 
 while True:

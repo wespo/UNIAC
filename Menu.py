@@ -19,6 +19,7 @@ class menu:
         self.button_timeout = 5
         #temporary amplifier perma-on:
         self.amp = 4
+        GPIO.setwarnings(False)
         GPIO.setup(self.amp, GPIO.OUT)
         GPIO.output(self.amp, True)
     #mode handlers    
@@ -109,11 +110,13 @@ class menu:
                 self.button_light_status = False
                 self.defaultMode()
             self.modes[0].displayHandler()
+            for eventFunction in self.eventFunctions:
+                if eventFunction():
+                    GPIO.output(self.amp, True)
+                    time.sleep(0.5)
             if self.modes[0].playStatus():
                 GPIO.output(self.amp, True)
             else:
                 GPIO.output(self.amp, False)
-            for eventFunction in self.eventFunctions:
-                eventFunction()
         except:
             pass
