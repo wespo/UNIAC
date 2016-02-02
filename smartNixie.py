@@ -43,7 +43,7 @@ class Nixie:
             if(blank == 2 and value == 0):
                 intValue = 0x00
                 intValue = self.muxSpares(address, intValue)
-                self.bus.write_byte_data(self.addresses[len(self.addresses)-1]['address'], 0x00)
+                self.bus.write_byte_data(self.addresses[len(self.addresses)-1]['address'], 0x00, intValue)
             tempValue = tempValue / 10
     def dimTube(self, tubeNumber, percent): #set brightness of an individual tube
         self.bus.write_byte_data(self.addresses[tubeNumber]['address'], 0x0B, percent)

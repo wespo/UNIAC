@@ -18,7 +18,7 @@ class menu:
         self.button_light_status = True
         self.button_timeout = 5
         #temporary amplifier perma-on:
-        self.amp = 4
+        self.amp = 18#4
         GPIO.setwarnings(False)
         GPIO.setup(self.amp, GPIO.OUT)
         GPIO.output(self.amp, True)
@@ -84,6 +84,7 @@ class menu:
         inputState1 = False
         inputState2 = True
         while inputState1 <> inputState2:
+            time.sleep(0.02)
             inputState1 = GPIO.input(channel)
             time.sleep(0.02)
             inputState2 = GPIO.input(channel)
@@ -104,19 +105,21 @@ class menu:
     def displayUpdate(self):    #function updates the display with the current handler
         while self.systemLock == True:
             pass
-        try:
-            if(((int(time.time()) - self.pressTime) > self.button_timeout) and (self.button_light_status == True)):
-                GPIO.output(self.button_lights, False)
-                self.button_light_status = False
-                self.defaultMode()
-            self.modes[0].displayHandler()
-            for eventFunction in self.eventFunctions:
-                if eventFunction():
-                    GPIO.output(self.amp, True)
-                    time.sleep(0.5)
-            if self.modes[0].playStatus():
+        #try:
+        if(((int(time.time()) - self.pressTime) > self.button_timeout) and (self.button_light_status == True)):
+            GPIO.output(self.button_lights, False)
+            self.button_light_status = False
+            self.defaultMode()
+        self.modes[0].displayHandler()
+        for eventFunction in self.eventFunctions:
+            if eventFunction():
                 GPIO.output(self.amp, True)
-            else:
-                GPIO.output(self.amp, False)
-        except:
-            pass
+                time.sleep(0.5)
+                print "calling alarm announce"
+                eventFunction(True)
+        if self.modes[0].playStatus():
+            GPIO.output(self.amp, True)
+        else:
+            GPIO.output(self.amp, False)
+        #except:
+        #    pass
