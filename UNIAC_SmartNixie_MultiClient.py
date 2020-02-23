@@ -1,24 +1,28 @@
 #!/usr/bin/python
-import mpd
 import smartNixie
 import time
 import re
 import pickle
 import Menu as MenuClass
 from socket import error as SocketError
-
-ESPEAK_USER = 'pi'
-
+import sys
+from MPDClientBlocking import MPDClientBlocking
+import os
 
 ##import sys
 ##logfilename = 'UNIAC.log'
 ##sys.stdout = open(logfilename, 'w')
 ##print logfilename
 
-import os
 print 'Starting UNIAC: The Ultimate Nixie Internet Alarm Clock'
-print 'Model: UNIAC-S900-Vu-Pro'
-print 'Version: 1.0'
+print 'Model: UNIAC-S900'
+print 'Version: 2.1'
+
+if len(sys.argv) > 1:
+    if(sys.argv[1] == "autostart"):
+        print("starting mopidy and waiting 30 seconds")
+        os.popen('mopidy &')
+        time.sleep(30)
 
 def UNIACPS():
     pythonProcesses = os.popen('ps -e | grep python').readlines()
@@ -27,37 +31,20 @@ def UNIACPS():
         psNum = str.split(process)[0]
         print "killing: " + psNum
         os.system('sudo kill ' + psNum)
-        
+
 #UNIACPS()
 
-# use_unicode will enable the utf-8 mode for python2
-# see http://pythonhosted.org/python-mpd2/topics/advanced.html#unicode-handling
-client = mpd.MPDClient(use_unicode=True)
-startupTimeout = 120
-print "Attempting to connect to MPD Daemon. Process will time out after " + str(startupTimeout) + " seconds."
-t = time.time() + startupTimeout #wait up to two minutes for mopidy to start.
-while time.time()<t:
-    try:
-        client.connect("localhost", 6600)
-        print "Connected Successfully"
-        break
-    except:
-        pass
-
-##if client.status()['playlistlength'] == '0':
-##    client.load('Fallout: New Vegas (by tardskii)')
-##if client.status()['state'] <> 'play':
-##    client.play()
-##    print "Play"
 nixie = smartNixie.Nixie()
 nixie.dimTubes(75)
 nixie.stopAllBlinking()
+#nixie.setAllFade(True)
 
 #setup menu system
 Menu = MenuClass.menu()
 
 #add buttons so menu system knows the hardware.
 #the 'name' addribute will be used as a lookup on child classes.
+#buttons = {'plus':16, 'minus':20, 'mode':26, 'playpause':12, 'select':13,'snooze':6,'alarmenable':5} #list the physical buttons on the board
 buttons = {'plus':6, 'minus':12, 'mode':13, 'playpause':16, 'select':19,'snooze':20,'alarmenable':21} #list the physical buttons on the board
 #add buttons to the menu system
 Menu.addButtons(buttons)
@@ -67,11 +54,10 @@ def announce(message, block = False):
         blockString = '\"'
     else:
         blockString = '\" &'
-        
-        
+
     newMessage = 'sudo espeak -ven+f3 -k5 -a150 -p20 -s120 \"' + message + blockString
     os.system(newMessage)
-    
+
 def announcePlaylist(message, block = False): #cleans up playlist name string
     message = message.encode('ascii','ignore')
     re.sub("\s\s+"," ", message)
@@ -81,8 +67,62 @@ def announcePlaylist(message, block = False): #cleans up playlist name string
         message = message[0:parenIndex]
     message = ' '.join(str.split(message)[0:4])
     announce(message, block)
-    
-class config:
+
+#start connections to Mopidy
+controlClient = MPDClientBlocking()
+statusClient = MPDClientBlocking()
+#displayClient = MPDClientBlocking()
+
+class mpdGeneral: #general purpose class for MPD interfaces
+    def playStatus(self):
+        return statusClient.playStatus()
+    def canonicalPlayStatus(self):
+        return statusClient.playStatus()
+    def playPause(self, direction):
+        if direction == -1:
+            return self.pause(-1)
+        else:
+            return -1
+    def play(self, direction):
+        if direction == -1:
+            return controlClient.play()
+        else:
+            return -1
+    def pause(self, direction, pauseIfPlaying=False):
+        if direction == -1:
+            return controlClient.pause()
+        else:
+            return -1
+    def nextTrack(self, direction):
+        if direction == -1:
+            return controlClient.next()
+        else:
+            return -1
+    def previousTrack(self, direction):
+        if direction == -1:
+            return controlClient.previous()
+        else:
+            return -1
+    def clearPlaylist(self):
+        return controlClient.clear()
+    def getPlaylists(self):
+        lists = statusClient.getPlaylists()
+        print "# Playlists found:" + str(len(lists))
+        return lists
+    def loadPlaylist(self, playlist):
+        return controlClient.loadPlaylist(playlist)
+    def clientTime(self):
+        return statusClient.clientTime()
+    def setRandom(self, value): #-1 to toggle
+        return controlClient.setParam('random',value)
+    def getRandom(self):
+        return statusClient.getParam('random') #current value
+    def setRepeat(self, value): #-1 to toggle
+        return controlClient.setParam('repeat', value)
+    def getRepeat(self):
+        return statusClient.getParam('repeat') #current value
+
+class UNIACConfig:
     def __init__(self, path='UNIAC.conf'):
         self.path = path
         if os.path.isfile(self.path):
@@ -105,181 +145,13 @@ class config:
         confFileStream = open(self.path, 'w')
         pickle.dump(self.conf, confFileStream)
 
-Config = config()
-
-class mpdGeneral: #general purpose class for MPD interfaces
-    def clientStatus(self): #method to reconnect to the client if need be
-        try:
-            client.status()
-        except (mpd.MPDError, IOError):
-            print 'MPD Connection Error.'
-            print 'Reconnecting to MPD service.'
-            try:
-                client.close()
-            except:
-                pass
-            try:
-                client.connect("localhost", 6600)
-                return True
-            except:
-                print "Reconnect failed"
-                return False
-                
-##        except SocketError:
-##            print 'Socket Error.'
-##            print 'Reconnecting to MPD service'
-##            #time.sleep(0.05)
-##            #client.connect("localhost", 6600)
-##            time.sleep(0.05)
-##        except: 
-##            print 'Reconnecting to MPD service'
-##            time.sleep(0.05)
-##            client.connect("localhost", 6600)
-##            time.sleep(0.05)           
-##        except:
-##            print 'MPD Connection Error. Closing connection and reinitializing'
-##            client = mpd.MPDClient()
-##            time.sleep(0.05)
-##            client.connect("localhost", 6600)
-##            time.sleep(0.05)
-        except:
-            "Other error, go fuck yourself"
-            return False
-    def playStatus(self):
-        if self.clientStatus() == False:
-            return -1
-        currentStatus = client.status();
-        while 'state' not in currentStatus:
-            currentStatus = client.status()
-        if currentStatus['state'] == 'play':
-            return 1
-        else:
-            return 0
-    def canonicalPlayStatus(self):
-        if self.clientStatus() == False:
-            return -1
-        currentStatus = client.status();
-        while 'state' not in currentStatus:
-            currentStatus = client.status()
-        if currentStatus['state'] == 'play':
-            return 1
-        else:
-            return 0
-    def playPause(self, direction):
-        if direction == -1:
-            self.clientStatus()
-            currentStatus = client.status();
-            while 'state' not in currentStatus:
-                currentStatus = client.status()
-            print "play"
-            self.pause(-1)
-            time.sleep(0.1)
-    def play(self, direction):
-        if direction == -1:
-            self.clientStatus()
-            try:
-                client.play()
-            except:
-                pass
-            time.sleep(0.1)
-    def pause(self, direction, pauseIfPlaying=False):
-        if pauseIfPlaying and self.playStatus() == False:
-            return
-        if direction == -1:
-            self.clientStatus()
-            try:
-                client.pause()
-            except:
-                pass
-            time.sleep(0.1)            
-    def nextTrack(self, direction):
-        if direction == -1:
-            self.clientStatus()
-            try:
-                client.next()
-            except:
-                pass
-            time.sleep(0.1)
-    def previousTrack(self, direction):
-        if direction == -1:
-            self.clientStatus()
-            try:
-                client.previous()
-                return True
-            except:
-                return False
-            time.sleep(0.1)
-    def clearPlaylist(self):
-        self.clientStatus()
-        try:
-            client.clear()
-            return True
-        except:
-            return False
-    def getPlaylists(self):
-        self.clientStatus()
-        try:
-            lists = [{}]
-            count = 0
-            while lists[0].has_key('playlist') == False:
-                lists = client.listplaylists()
-                count = count + 1
-                print lists
-                if count > 100000:
-                    return []
-            return lists
-        except:
-            return []
-    def loadPlaylist(self, playlist):
-        self.clientStatus()
-        try:
-            client.load(playlist)
-        except:
-            pass
-    def clientTime(self):
-        self.clientStatus()
-        currentStatus = client.status()
-        while 'time' not in currentStatus:
-            currentStatus = client.status()
-        return client.status()['time'].split(':')
-    def setRandom(self, value): #-1 to toggle
-        client.random(self.setParam('random', value))
-    def getRandom(self):
-        return self.getParam('random') #current value
-    def setRepeat(self, value): #-1 to toggle
-        client.repeat(self.setParam('repeat', value))
-    def getRepeat(self):
-        return self.getParam('repeat') #current value
-    def setParam(self, param, value): #-1 to toggle
-        self.clientStatus()
-        currentStatus = client.status()
-        while param not in currentStatus:
-            currentStatus = client.status()
-        if value == -1:
-            value = int(not(int(client.status()[param]))) #negate current value
-        if value == 1 or value == 0:
-            return value
-    def getParam(self, param):
-        self.clientStatus()
-        currentStatus = client.status()
-        while param not in currentStatus:
-            currentStatus = client.status()
-        return int(currentStatus[param]) #current value
-    def getXfade(self):
-        self.clientStatus()
-        return int(client.status()['xfade']) #current value
-    def setXfade(self, value): #-1 to toggle
-        self.clientStatus()
-        if value == -1:
-            value = int(not(int(client.status()['xfade']))) #negate current value
-        if value == 1 or value == 0:
-            client.crossfade(value)
+Config = UNIACConfig()
 
 class alarmInfo:
     def __init__(self):
         self.hours = Config.readParam('hours', True, 0)
         self.minutes = Config.readParam('minutes', True, 0)
-        self.seconds = Config.readParam('seconds', True, 0)    
+        self.seconds = Config.readParam('seconds', True, 0)
         self.alarmEnabled = Config.readParam('alarmEnabled', True, False)
         self.snoozeTime = Config.readParam('snoozeTime', True, 10)
         self.playing = Config.readParam('playing', True, False)
@@ -337,8 +209,12 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
                     styleString = ' at night.'
                 if minute == 0:
                     timeStr = time.strftime('%I o\'clock')
-                if minute < 10:
-                    timestr  = "o " + timestr[1:]
+                elif minute < 10:
+                    minuteStr = time.strftime('%M')
+                    minuteStr = minuteStr[1:]
+                    hourStr = time.strftime('%I')
+
+                    timeStr  = hourStr + ', oh ' + minuteStr + '.'
                 else:
                     timeStr = time.strftime('%I, %M.')
                 if timeStr[0] == '0':
@@ -351,7 +227,7 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
         #print str(time.localtime().tm_hour) + " " + str(time.localtime().tm_min) + " " + str(time.localtime().tm_sec) + " : " + str(alarm.hours) + " " + str(alarm.minutes) + " " + str(alarm.seconds) + " : " + str(alarm.playing) + " " + str(alarm.alarmEnabled)
         if alarm.playing:
             return False
-        elif time.localtime().tm_hour == alarm.hours and time.localtime().tm_min == alarm.minutes and alarm.playing == False and alarm.alarmEnabled:
+        elif time.localtime().tm_hour == alarm.hours and time.localtime().tm_min == alarm.minutes and time.localtime().tm_sec <= 2 and alarm.playing == False and alarm.alarmEnabled:
             alarm.playing = True
             print "Alarm Trigger"
             return True
@@ -384,8 +260,10 @@ class alarmClock (alarmGeneral, mpdGeneral):
                     localHours = 12
                 nixie.setSpare(0, False)
             nixie.printTubes(localHours*10000 + alarmTime['minutes']*100,2)
+            #nixie.colons(True)
         else:
             nixie.printTubes(localHours*10000 + alarmTime['minutes']*100)
+            #nixie.colons(True)
     def nextOption(self,direction):
         if direction == -1:
             nixie.stopBlinking(self.selected)
@@ -437,6 +315,7 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
         if(timeNum < 10000):
             timeNum = timeNum + 1000000 #add leading zeros for midnight so it shows 00 for hours (the 1 is offscreen)
         nixie.printTubes(timeNum, 2)
+        #nixie.colons(True)
     def stopHandler(self):
         nixie.setSpare(0,False)
     def twelveHourMode(self, onOff=None):
@@ -444,6 +323,7 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
             self.twelveHour = onOff
             Config.writeParam('twelveHour', self.twelveHour)
         return self.twelveHour
+
 class nixieCalendar(nixieClock):
     def __init__(self):
         self.buttonHandlers = {'playpause':self.playPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
@@ -451,6 +331,7 @@ class nixieCalendar(nixieClock):
     def displayHandler(self):
         calNum = int(time.strftime('%m%d%y')) #calendar
         nixie.printTubes(calNum, 2)
+        #nixie.colons(False)
 class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / remaining time)
     def __init__(self):
         self.buttonHandlers = {'playpause':self.statusPlayPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'select':self.changeDisplayMode, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
@@ -482,6 +363,7 @@ class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / re
         modSeconds = displaySeconds%60
         displayTime = displayMinutes*100 + modSeconds
         nixie.printTubes(displayTime, 2)
+        #nixie.colons(False)
     def changeDisplayMode(self, direction):
         if direction == -1:
             if self.displayMode == 'elapsed':
@@ -517,7 +399,7 @@ class selectStation(mpdGeneral, alarmGeneral):
             announce(self.channels[self.selected], True)
     def displayHandler(self):
         nixie.printTubes(123456)
-
+        #nixie.colons(True)
     def changePlaylist(self,direction, announceChange=True):
         if direction == -1:
             count = 0;
@@ -536,7 +418,7 @@ class selectStation(mpdGeneral, alarmGeneral):
             if announceChange:
                 announce("station changed", True)
             Config.writeParam('selected', self.selected)
-    
+
     def startHandler(self):
         self.playState = self.canonicalPlayStatus()
         if self.playState:
@@ -565,6 +447,9 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
         self.changePlaylist(-1, False)
         self.prevSelected = 0
         self.playState = 1
+        self.changingPlaylist = False
+        self.changingPlaylistIndex = 0
+        self.changingPlaylistDelta = -1
         if self.playState:
             self.play(-1)
     def playStatus(self):
@@ -573,19 +458,33 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
         if direction == -1:
             self.selected = self.selected + 1
             if self.selected >= len(self.channels):
-                self.selected = 1
+                self.selected = 0
             self.displayHandler()
             announcePlaylist(self.channels[self.selected][self.playlist_name], True)
     def prevChannel(self,direction):
         if direction == -1:
             self.selected = self.selected - 1
-            if self.selected < 1:
+            if self.selected < 0:
                 self.selected = len(self.channels) - 1
             self.displayHandler()
             announcePlaylist(self.channels[self.selected][self.playlist_name], True)
     def displayHandler(self):
+        # if(self.changingPlaylist):
+        #     dispString = "000000"
+        #     dispString[self.changingPlaylistIndex] = "1"
+        #     self.changingPlaylistIndex += self.changingPlaylistDelta
+        #     if self.changingPlaylistIndex >= 5:
+        #         self.changingPlaylistDelta = -1
+        #     if self.changingPlaylistIndex <= 0:
+        #         self.changingPlaylistDelta = 1
+        #     print(dispString)
+        #     nixie.printTubes(dispString)
+        #     nixie.colons(False)
+        # else:
+        #     nixie.printTubes(self.selected)
+        #     nixie.colons(False)
         nixie.printTubes(self.selected)
-
+        #nixie.colons(False)
     def changePlaylist(self,direction, announceChange=True):
         if direction == -1:
             count = 0;
@@ -595,17 +494,27 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
                 if count > 20:
                     break
             count = 0;
-            print self.channels[self.selected][self.playlist_name]
+            print "self.selected = " + str(self.selected)
+            print "self.playlist_name = " + self.playlist_name
+            print "self.channels (#) = " + str(len(self.channels))
+            # print "List of playlists: "
+            # print controlClient.listplaylists()
+            print "self.channels[self.selected][self.playlist_name]" + self.channels[self.selected][self.playlist_name]
+            print "loading..."
+            #nixie.printTubes("101010")
+            self.changingPlaylist = True
             while self.loadPlaylist(self.channels[self.selected][self.playlist_name]) == False: #load new playlist
+                print "load playlist timeout. retrying."
                 count = count + 1
-                time.sleep(0.1)
                 if count > 20:
                     break
             self.prevSelected = self.selected
+            print "loaded"
+            self.changingPlaylist = False
             if announceChange:
                 announce("station changed", True)
             Config.writeParam('selected', self.selected)
-    
+
     def startHandler(self):
         self.playState = self.canonicalPlayStatus()
         self.channels = self.getPlaylists()
@@ -616,7 +525,7 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
     def stopHandler(self):
         if self.playState:
             self.play(-1)
-        self.selected = self.prevSelected            
+        self.selected = self.prevSelected
 
 class option (mpdGeneral): #class to describe how to parse each option parameter
     def __init__(self, name='null', minimum=0, maximum=0, value = 0, onget=None, onset=None):
@@ -676,8 +585,9 @@ class optionMenu (mpdGeneral, alarmGeneral):
     def displayHandler(self):
         disp = ''
         for option in self.options:
-            disp = disp + str(int(option.value))
+            disp = disp + str(max(int(option.value),0))
         nixie.printTubes(int(disp))
+        #nixie.colons(False)
     def nextOption(self,direction):
         if direction == -1:
             nixie.stopBlinking(self.selected)
@@ -703,27 +613,38 @@ class optionMenu (mpdGeneral, alarmGeneral):
             #Now set the value
             self.options[self.selected].setter(tempValue)
 
+
 def callTwelveHour(value=None):
     retVal = value
     for menuItem in Menu.modes:
         if hasattr(menuItem, 'twelveHourMode'):
             retVal = menuItem.twelveHourMode(value)
     return retVal
-        
+
 
 Menu.attachMode(nixieClock())           #clock
 Menu.attachMode(mpdStatus())            #spotify playing mode
-Menu.attachMode(nixieCalendar())           #clock
-#alarm.alarmEnabled = bool(Menu.buttonRead(buttons['alarmenable'])) #Special case. In this clock, the system is a mechanical toggle, so it needs to be detected on startup
+Menu.attachMode(nixieCalendar())           #calendar
 Menu.attachMode(alarmClock())           #alarm clock
 Menu.attachMode(selectPlaylist())       #playlists
 #Menu.attachMode(selectStation())        #radio stations
 #Menu.modes.pop()
+
 options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRandom),
            option('repeat', 0, 1, 0, mpdGeneral().getRepeat, mpdGeneral().setRepeat),
            option('twelve hour mode', 0, 1, 1, callTwelveHour, callTwelveHour)] # each option is unique. Add each one to handle things. could be cleaner
 Menu.attachMode(optionMenu(options))    #options
 
+cycleCount = 0;
+cycleTime = 0.1 #seconds
+keepAliveTime = 0.5 #minutes
 while True:
-    time.sleep(0.1)
-    Menu.displayUpdate();
+    time.sleep(cycleTime)
+    Menu.displayUpdate(); #update the display
+    cycleCount += 1
+    if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
+        cycleCount = 0
+        print "Keep Alive" + time.strftime("%H:%M:%S %d/%b/%Y",time.localtime())
+        controlClient.keepAlive()
+        statusClient.keepAlive()
+        #displayClient.keepAlive()

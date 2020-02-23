@@ -111,13 +111,9 @@ class mpdGeneral: #general purpose class for MPD interfaces
     def clientStatus(self): #method to reconnect to the client if need be
         try:
             client.status()
-        except (mpd.MPDError, IOError):
+        except (mpd.MPDError, mpd.ConnectionError, IOError):
             print 'MPD Connection Error.'
             print 'Reconnecting to MPD service.'
-            try:
-                client.close()
-            except:
-                pass
             try:
                 client.connect("localhost", 6600)
                 return True
@@ -125,23 +121,6 @@ class mpdGeneral: #general purpose class for MPD interfaces
                 print "Reconnect failed"
                 return False
                 
-##        except SocketError:
-##            print 'Socket Error.'
-##            print 'Reconnecting to MPD service'
-##            #time.sleep(0.05)
-##            #client.connect("localhost", 6600)
-##            time.sleep(0.05)
-##        except: 
-##            print 'Reconnecting to MPD service'
-##            time.sleep(0.05)
-##            client.connect("localhost", 6600)
-##            time.sleep(0.05)           
-##        except:
-##            print 'MPD Connection Error. Closing connection and reinitializing'
-##            client = mpd.MPDClient()
-##            time.sleep(0.05)
-##            client.connect("localhost", 6600)
-##            time.sleep(0.05)
         except:
             "Other error, go fuck yourself"
             return False
@@ -724,6 +703,13 @@ options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRa
            option('twelve hour mode', 0, 1, 1, callTwelveHour, callTwelveHour)] # each option is unique. Add each one to handle things. could be cleaner
 Menu.attachMode(optionMenu(options))    #options
 
+count = 0;
+cycleTime = 0.1 #seconds
+keepAliveTime = 5 #minutes
 while True:
-    time.sleep(0.1)
+    time.sleep(cycleTime)
     Menu.displayUpdate();
+    count++
+    if count >= keepAliveTime * 60 / cycleTime: #every 5 minutes
+        count = 0
+        nixieClock.clientStatus()
