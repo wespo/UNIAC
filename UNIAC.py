@@ -6,17 +6,19 @@ import pickle
 import Menu as MenuClass
 from socket import error as SocketError
 import sys
-from MPDClientBlocking import MPDClientBlocking
 import os
+import spotipyLogin
 
 ##import sys
 ##logfilename = 'UNIAC.log'
 ##sys.stdout = open(logfilename, 'w')
 ##print logfilename
 
+configPath = '/home/pi/UNIAC/UNIAC.conf'
+
 print 'Starting UNIAC: The Ultimate Nixie Internet Alarm Clock'
 print 'Model: UNIAC-S1000-Portable'
-print 'Version: 2.1'
+print 'Version: 3.0'
 
 if len(sys.argv) > 1:
     if(sys.argv[1] == "autostart"):
@@ -68,61 +70,74 @@ def announcePlaylist(message, block = False): #cleans up playlist name string
     announce(message, block)
 
 #start connections to Mopidy
-controlClient = MPDClientBlocking()
-statusClient = MPDClientBlocking()
-#displayClient = MPDClientBlocking()
 
 class mpdGeneral: #general purpose class for MPD interfaces
     def playStatus(self):
-        return statusClient.playStatus()
+        return self.canonicalPlayStatus()
     def canonicalPlayStatus(self):
-        return statusClient.playStatus()
+        if spotipyLogin.sp.current_playback():
+            return spotipyLogin.sp.current_playback()['is_playing']
+        else:
+            return False
     def playPause(self, direction):
         if direction == -1:
-            return self.pause(-1)
+            if spotipyLogin.sp.current_playback()['is_playing']:
+                return self.pause(-1)
+            else:
+                return spotipyLogin.sp.start_playback()
         else:
             return -1
     def play(self, direction):
         if direction == -1:
-            return controlClient.play()
+            return spotipyLogin.sp.start_playback()
         else:
             return -1
     def pause(self, direction, pauseIfPlaying=False):
-        if direction == -1:
-            return controlClient.pause()
-        else:
-            return -1
+        spotipyLogin.sp.pause_playback()
+        return -1
     def nextTrack(self, direction):
         if direction == -1:
-            return controlClient.next()
+            return spotipyLogin.sp.next_track()
         else:
             return -1
     def previousTrack(self, direction):
         if direction == -1:
-            return controlClient.previous()
+            return spotipyLogin.sp.previous_track()
         else:
             return -1
-    def clearPlaylist(self):
-        return controlClient.clear()
     def getPlaylists(self):
-        lists = statusClient.getPlaylists()
-        print "# Playlists found:" + str(len(lists))
+        lists = spotipyLogin.sp.user_playlists(spotipyLogin.username)
+        print "# Playlists found:" + str(lists['total'])
         return lists
     def loadPlaylist(self, playlist):
-        return controlClient.loadPlaylist(playlist)
+        return spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id, context_uri=playlist['uri'])
     def clientTime(self):
-        return statusClient.clientTime()
+        current = spotipyLogin.sp.currently_playing()
+        return [current['progress_ms'], current['item']['duration_ms']]
     def setRandom(self, value): #-1 to toggle
-        return controlClient.setParam('random',value)
+        sh_state = spotipyLogin.sp.current_playback()['shuffle_state']
+        if value == -1:
+            spotipyLogin.sp.shuffle(not sh_state)
+        else:
+            spotipyLogin.sp.shuffle(value)
+        return int(spotipyLogin.sp.current_playback()['shuffle_state'])
     def getRandom(self):
-        return statusClient.getParam('random') #current value
+        return int(spotipyLogin.sp.current_playback()['shuffle_state'])
     def setRepeat(self, value): #-1 to toggle
-        return controlClient.setParam('repeat', value)
+        sh_state = spotipyLogin.sp.current_playback()['repeat_state']
+        repeatLookup = {False:'off',True:'context'}
+        if value == -1:
+            spotipyLogin.sp.repeat(not repeatLookup[sh_state])
+            return int(not repeatLookup[sh_state])
+        else:
+            spotipyLogin.sp.repeat(repeatLookup[value])
+            return int(value)
     def getRepeat(self):
-        return statusClient.getParam('repeat') #current value
+        repeatLookup = {'off':False,'context':True,'track':True}
+        return int(repeatLookup[spotipyLogin.sp.current_playback()['repeat_state']])
 
 class UNIACConfig:
-    def __init__(self, path='/home/pi/UNIAC/UNIAC.conf'):
+    def __init__(self, path=configPath):
         self.path = path
         if os.path.isfile(self.path):
             confFileStream = open(self.path, 'r')
@@ -351,13 +366,15 @@ class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / re
                 del self.defaultMenu
     def displayHandler(self):
         [elapsedSeconds, totalSeconds] = self.clientTime()
-        elapsedSeconds = int(elapsedSeconds)
-        totalSeconds = int(totalSeconds)
+        elapsedSeconds = int(round(elapsedSeconds/1000))
+        totalSeconds = int(round(totalSeconds/1000))
         if self.displayMode == 'remaining':
             remainingSeconds = totalSeconds - elapsedSeconds
             displaySeconds = remainingSeconds
         else:
             displaySeconds = elapsedSeconds
+        if displaySeconds < 0:
+            displaySeconds = 0
         displayMinutes = int(displaySeconds/60)
         modSeconds = displaySeconds%60
         displayTime = displayMinutes*100 + modSeconds
@@ -370,77 +387,22 @@ class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / re
             else:
                 self.displayMode = 'elapsed'
 
-class selectStation(mpdGeneral, alarmGeneral):
-    def __init__(self):
-        self.buttonHandlers = {'plus':self.nextChannel,'minus':self.prevChannel, 'select':self.changePlaylist, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
-
-        #for now, pre-defined radio stations, will later be loaded from a flat file -- ultimately to be selected by a web interface
-        self.channels = ['Fallout: New Vegas (by tardskii)',"All Out 90's (by spotify)",'Billy Joel','Electro Swing All Day (by barrillel)','Soothing (by chalcedonian)','Ambient | Focus Friendly Video Game Music']
-        self.selected = Config.readParam('selected', True, 0)
-        self.changePlaylist(-1, False)
-        self.prevSelected = 0
-        self.playState = 1
-        if self.playState:
-            self.play(-1)
-    def playStatus(self):
-        return True
-    def nextChannel(self,direction):
-        if direction == -1:
-            nixie.stopBlinking(self.selected)
-            self.selected = (self.selected + 1)%6
-            nixie.startBlinking(self.selected)
-            announce(self.channels[self.selected], True)
-    def prevChannel(self,direction):
-        if direction == -1:
-            nixie.stopBlinking(self.selected)
-            self.selected = (self.selected - 1)%6
-            nixie.startBlinking(self.selected)
-            announce(self.channels[self.selected], True)
-    def displayHandler(self):
-        nixie.printTubes(123456)
-        nixie.colons(True)
-    def changePlaylist(self,direction, announceChange=True):
-        if direction == -1:
-            count = 0;
-            while self.clearPlaylist() == False: #clear playlist
-                count = count + 1
-                time.sleep(0.1)
-                if count > 20:
-                    break
-            count = 0;
-            while self.loadPlaylist(self.channels[self.selected]) == False: #load new playlist
-                count = count + 1
-                time.sleep(0.1)
-                if count > 20:
-                    break
-            self.prevSelected = self.selected
-            if announceChange:
-                announce("station changed", True)
-            Config.writeParam('selected', self.selected)
-
-    def startHandler(self):
-        self.playState = self.canonicalPlayStatus()
-        if self.playState:
-            self.pause(-1)
-        nixie.startBlinking(self.selected)
-        self.prevSelected = self.selected
-        announce(self.channels[self.selected], True)
-    def stopHandler(self):
-        if self.playState:
-            self.play(-1)
-        nixie.stopAllBlinking()
-        self.selected = self.prevSelected
-
 class selectPlaylist(mpdGeneral, alarmGeneral):
     def __init__(self):
         self.buttonHandlers = {'plus':self.nextChannel,'minus':self.prevChannel, 'select':self.changePlaylist, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
 
         #for now, pre-defined radio stations, will later be loaded from a flat file -- ultimately to be selected by a web interface
-        self.playlist_name = 'playlist' #playlist name is the 3rd element
-        self.channels = self.getPlaylists()
-        self.selected = Config.readParam('selected', True, 0)
-        if self.selected == 0:
-            self.selected = 1
+        self.playlists = self.getPlaylists()
+        self.playlistURI = Config.readParam('playlistURI')
+        if self.playlistURI == None: #no playlist loaded from config, default to first playlist
+            self.setPlaylistDefault()
+        self.selected = self.findPlaylistIndex(self.playlistURI)
+        if self.selected == None: #could not find selected playlist uri. Deleted playlist?
+            self.setPlaylistDefault()
+
+
+        # if self.selected == 0: #I think this was for when playlist 0 was special and broken/
+        #     self.selected = 1
 
         Config.writeParam('selected', self.selected)
         self.changePlaylist(-1, False)
@@ -451,76 +413,69 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
         self.changingPlaylistDelta = -1
         if self.playState:
             self.play(-1)
+    def findPlaylistIndex(self, uri):
+        index = 0
+        for playlist in self.playlists['items']:
+            # print("playlist: ")
+            # print(self.playlists)
+            # print("uri: ")
+            # print(uri)
+            if playlist['uri'] == uri:
+                return index
+            else:
+                index = index+1
+        return None
+    def setPlaylistDefault(self):
+        self.selected = 0
+        self.playlistURI = self.playlists['items'][self.selected]['uri']
+        Config.writeParam('playlistURI', self.playlistURI)
     def playStatus(self):
         return True
     def nextChannel(self,direction):
         if direction == -1:
             self.selected = self.selected + 1
-            if self.selected >= len(self.channels):
+            if self.selected >= self.playlists['total']:
                 self.selected = 0
             self.displayHandler()
-            announcePlaylist(self.channels[self.selected][self.playlist_name], True)
+            announcePlaylist(self.playlists['items'][self.selected]['name'], True)
     def prevChannel(self,direction):
         if direction == -1:
             self.selected = self.selected - 1
             if self.selected < 0:
-                self.selected = len(self.channels) - 1
+                self.selected = self.playlists['total'] - 1
             self.displayHandler()
-            announcePlaylist(self.channels[self.selected][self.playlist_name], True)
+            announcePlaylist(self.playlists['items'][self.selected]['name'], True)
     def displayHandler(self):
-        # if(self.changingPlaylist):
-        #     dispString = "000000"
-        #     dispString[self.changingPlaylistIndex] = "1"
-        #     self.changingPlaylistIndex += self.changingPlaylistDelta
-        #     if self.changingPlaylistIndex >= 5:
-        #         self.changingPlaylistDelta = -1
-        #     if self.changingPlaylistIndex <= 0:
-        #         self.changingPlaylistDelta = 1
-        #     print(dispString)
-        #     nixie.printTubes(dispString)
-        #     nixie.colons(False)
-        # else:
-        #     nixie.printTubes(self.selected)
-        #     nixie.colons(False)
         nixie.printTubes(self.selected)
         nixie.colons(False)
     def changePlaylist(self,direction, announceChange=True):
         if direction == -1:
-            count = 0;
-            while self.clearPlaylist() == False: #clear playlist
-                count = count + 1
-                time.sleep(0.1)
-                if count > 20:
-                    break
-            count = 0;
             print "self.selected = " + str(self.selected)
-            print "self.playlist_name = " + self.playlist_name
-            print "self.channels (#) = " + str(len(self.channels))
+            print "self.playlist_name = " + self.playlists['items'][self.selected]['name']
+            print "self.playlists (#) = " + str(self.playlists['total'])
             # print "List of playlists: "
             # print controlClient.listplaylists()
-            print "self.channels[self.selected][self.playlist_name]" + self.channels[self.selected][self.playlist_name]
             print "loading..."
             nixie.printTubes("101010")
             self.changingPlaylist = True
-            while self.loadPlaylist(self.channels[self.selected][self.playlist_name]) == False: #load new playlist
-                print "load playlist timeout. retrying."
-                count = count + 1
-                if count > 20:
-                    break
+            self.loadPlaylist(self.playlists['items'][self.selected])
+            self.playlistURI = self.playlists['items'][self.selected]['uri']
+            Config.writeParam('playlistURI', self.playlistURI)
             self.prevSelected = self.selected
             print "loaded"
             self.changingPlaylist = False
             if announceChange:
                 announce("station changed", True)
-            Config.writeParam('selected', self.selected)
-
+            print "done"
     def startHandler(self):
         self.playState = self.canonicalPlayStatus()
-        self.channels = self.getPlaylists()
-        if self.playState:
-            self.pause(-1)
+        self.pause(-1)
+        self.playlists = self.getPlaylists()
+
+        self.selected = self.findPlaylistIndex(self.playlistURI)
         self.prevSelected = self.selected
-        announcePlaylist(self.channels[self.selected][self.playlist_name], True)
+
+        announcePlaylist(self.playlists['items'][self.selected]['name'], True)
     def stopHandler(self):
         if self.playState:
             self.play(-1)
@@ -620,7 +575,6 @@ def callTwelveHour(value=None):
             retVal = menuItem.twelveHourMode(value)
     return retVal
 
-
 Menu.attachMode(nixieClock())           #clock
 Menu.attachMode(mpdStatus())            #spotify playing mode
 Menu.attachMode(nixieCalendar())           #calendar
@@ -640,10 +594,10 @@ keepAliveTime = 0.5 #minutes
 while True:
     time.sleep(cycleTime)
     Menu.displayUpdate(); #update the display
-    cycleCount += 1
-    if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
-        cycleCount = 0
-        print "Keep Alive"
-        controlClient.keepAlive()
-        statusClient.keepAlive()
-        #displayClient.keepAlive()
+    # cycleCount += 1
+    # if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
+    #     cycleCount = 0
+    #     print "Keep Alive"
+    #     controlClient.keepAlive()
+    #     statusClient.keepAlive()
+    #     #displayClient.keepAlive()

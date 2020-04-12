@@ -3,7 +3,7 @@ import RPi.GPIO as GPIO
 import time
 from MCP230XX import MCP230XX as MCP230XX
 
-version = "0.03"
+version = "0.04"
 
 class menu:
     #class for system menu, rotates through menu items by calling changeMode(1 for button up, -1 for button down).
@@ -36,7 +36,10 @@ class menu:
         #interrupts
         GPIO.setup(self.intPin,GPIO.IN)
         GPIO.add_event_detect(self.intPin,GPIO.RISING,callback=self.MCP.callbackA)
-
+        try:
+            self.MCP.callbackA(1) #fixes hung up library due to unserviced interrupt
+        except:
+            print("No unserviced interrupts. Yay!")
 
 
     #mode handlers
