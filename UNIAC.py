@@ -75,21 +75,38 @@ class mpdGeneral: #general purpose class for MPD interfaces
     def playStatus(self):
         return self.canonicalPlayStatus()
     def canonicalPlayStatus(self):
-        if spotipyLogin.sp.current_playback():
-            return spotipyLogin.sp.current_playback()['is_playing']
+        playStatus = spotipyLogin.sp.current_playback()
+        if playStatus != None:
+            return playStatus['is_playing']
         else:
+            print("Warning: Canonical Playstatus = None")
             return False
     def playPause(self, direction):
         if direction == -1:
-            if spotipyLogin.sp.current_playback()['is_playing']:
+            if self.playStatus():
                 return self.pause(-1)
             else:
-                return spotipyLogin.sp.start_playback()
+                return self.play(-1)
         else:
             return -1
     def play(self, direction):
+        print("Attempting to start playback")
         if direction == -1:
-            return spotipyLogin.sp.start_playback()
+            retryCount = 0
+            try:
+                startPlayback = spotipyLogin.sp.start_playback()
+                print("playback start succeeded")
+            except:
+                while retryCount < 10:
+                    print(spotipyLogin.sp.devices())
+                    try:
+                        startPlayback = spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id)
+                        return startPlayback
+                    except:
+                        print("warning: connection failed. Retrying " + str(10-retryCount) + " more times.")
+                        time.sleep(1)
+                    retryCount = retryCount+1
+            return -1
         else:
             return -1
     def pause(self, direction, pauseIfPlaying=False):
@@ -110,10 +127,24 @@ class mpdGeneral: #general purpose class for MPD interfaces
         print "# Playlists found:" + str(lists['total'])
         return lists
     def loadPlaylist(self, playlist):
-        return spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id, context_uri=playlist['uri'])
+        retryCount = 0
+        while retryCount < 10:
+            try:
+                spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id, context_uri=playlist['uri'])
+                print("Loaded playlist successfully")
+                return
+            except:
+                print("warning: load failed. Retrying " + str(10-retryCount) + " more times.")
+                time.sleep(3)
+            retryCount = retryCount+1
     def clientTime(self):
         current = spotipyLogin.sp.currently_playing()
-        return [current['progress_ms'], current['item']['duration_ms']]
+        # print("Client time = ")
+        # print(type(current))
+        if current != None:
+            return [current['progress_ms'], current['item']['duration_ms']]
+        else:
+            return [0, 0]
     def setRandom(self, value): #-1 to toggle
         sh_state = spotipyLogin.sp.current_playback()['shuffle_state']
         if value == -1:
