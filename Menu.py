@@ -19,7 +19,7 @@ class menu:
         self.button_light_status = True
         self.button_timeout = 5
         #temporary amplifier perma-on:
-        self.amp = 11# (single board) 18 (Original)
+        self.amp = 17 #UNIAC-003? (Untested) 11# (single board -- questionably tested) 18 (Original)
         self.mcpAddress = 0x20
         self.intPin = 4
 
