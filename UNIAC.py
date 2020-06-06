@@ -8,11 +8,14 @@ from socket import error as SocketError
 import sys
 import os
 import spotipyLogin
+import setproctitle
 
 ##import sys
 ##logfilename = 'UNIAC.log'
 ##sys.stdout = open(logfilename, 'w')
 ##print logfilename
+
+setproctitle.setproctitle("UNIAC")
 
 configPath = '/home/pi/UNIAC/UNIAC.conf'
 
@@ -77,7 +80,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
     playLastTimeChecked = 0
     def playStatus(self):
         if time.time() > (self.playLastTimeChecked + (5 * 60)):
-            print("Timeout, checking canonical play status.")
+            #print("Timeout, checking canonical play status.")
             return self.canonicalPlayStatus()
         else:
             return self.playStatusFlag
@@ -88,7 +91,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
             playStatus = playStatusRecv['is_playing']
             self.playStatusFull = playStatusRecv
         else:
-            print("Warning: Canonical Playstatus = None")
+            #print("Warning: Canonical Playstatus = None")
             playStatus = False
         playStatusFlag = playStatus
         return playStatus
@@ -168,7 +171,12 @@ class mpdGeneral: #general purpose class for MPD interfaces
         retryCount = 0
         while retryCount < 10:
             try:
+                spotipyLogin.sp.volume(0, device_id=spotipyLogin.uniac_id)
+                time.sleep(0.25)
                 spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id, context_uri=playlist['uri'])
+                spotipyLogin.sp.pause_playback(device_id=spotipyLogin.uniac_id)
+                time.sleep(0.25)
+                spotipyLogin.sp.volume(100, device_id=spotipyLogin.uniac_id)
                 print("Loaded playlist successfully")
                 return
             except:
@@ -212,7 +220,8 @@ class UNIACConfig:
             confFileStream = open(self.path, 'r')
             self.conf = pickle.load(confFileStream)
             confFileStream.close()
-        else:            self.conf = {}
+        else:
+            self.conf = {}
     def readParam(self, param, update = False, value = None):
         if param in self.conf:
             return self.conf[param]
@@ -476,7 +485,7 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
         Config.writeParam('selected', self.selected)
         self.changePlaylist(-1, False)
         self.prevSelected = 0
-        self.playState = 1
+        self.playState = 0
         self.changingPlaylist = False
         self.changingPlaylistIndex = 0
         self.changingPlaylistDelta = -1
@@ -657,9 +666,9 @@ options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRa
            option('twelve hour mode', 0, 1, 1, callTwelveHour, callTwelveHour)] # each option is unique. Add each one to handle things. could be cleaner
 Menu.attachMode(optionMenu(options))    #options
 
-cycleCount = 0;
+# cycleCount = 0;
+# keepAliveTime = 0.5 #minutes
 cycleTime = 0.1 #seconds
-keepAliveTime = 0.5 #minutes
 while True:
     time.sleep(cycleTime)
     Menu.displayUpdate(); #update the display
