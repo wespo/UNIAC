@@ -351,10 +351,10 @@ class alarmClock (alarmGeneral, mpdGeneral):
                 if localHours == 0:
                     localHours = 12
                 nixie.setSpare(0, False)
-            nixie.printTubes(localHours*10000 + alarmTime['minutes']*100,2)
+            nixie.printTubes(localHours*100 + alarmTime['minutes'])
             nixie.colons(True)
         else:
-            nixie.printTubes(localHours*10000 + alarmTime['minutes']*100)
+            nixie.printTubes(localHours*100 + alarmTime['minutes'])
             nixie.colons(True)
     def nextOption(self,direction):
         if direction == -1:
@@ -397,16 +397,16 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
         self.twelveHour = Config.readParam('twelveHour', True, True)
     def displayHandler(self):
         if self.twelveHour:
-            timeNum = int(time.strftime('%I%M%S')) #%I for 12-hour mode
+            timeNum = int(time.strftime('%I%M')) #%I for 12-hour mode
             if time.strftime('%p') == 'PM':
                 nixie.setSpare(0,True)
             else:
                 nixie.setSpare(0,False)
         else:
-            timeNum = int(time.strftime('%H%M%S')) #%H for 24-hour mode
-        if(timeNum < 10000):
-            timeNum = timeNum + 1000000 #add leading zeros for midnight so it shows 00 for hours (the 1 is offscreen)
-        nixie.printTubes(timeNum, 2)
+            timeNum = int(time.strftime('%H%M')) #%H for 24-hour mode
+        # if(timeNum < 100):
+        #     timeNum = timeNum + 10000 #add leading zeros for midnight so it shows 00 for hours (the 1 is offscreen)
+        nixie.printTubes(timeNum)
         nixie.colons(True)
     def stopHandler(self):
         nixie.setSpare(0,False)
@@ -421,8 +421,8 @@ class nixieCalendar(nixieClock):
         self.buttonHandlers = {'playpause':self.playPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.twelveHour = Config.readParam('twelveHour', True, True)
     def displayHandler(self):
-        calNum = int(time.strftime('%m%d%y')) #calendar
-        nixie.printTubes(calNum, 2)
+        calNum = int(time.strftime('%m%d')) #calendar
+        nixie.printTubes(calNum)
         nixie.colons(False)
 class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / remaining time)
     def __init__(self):
@@ -534,7 +534,7 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
             # print "List of playlists: "
             # print controlClient.listplaylists()
             print "loading..."
-            nixie.printTubes("101010")
+            nixie.printTubes("1010")
             self.changingPlaylist = True
             self.loadPlaylist(self.playlists['items'][self.selected])
             self.playlistURI = self.playlists['items'][self.selected]['uri']
@@ -593,7 +593,7 @@ class optionMenu (mpdGeneral, alarmGeneral):
         self.buttonHandlers = {'select':self.nextOption, 'minus':self.decValue,'plus':self.incValue, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.options = options
         self.playState = 0
-        while len(options) < 6:
+        while len(options) < 4:
             options.append(option())
         self.selected = 0
     def playStatus(self): #function to tell menu to keep the amp on when on this page
