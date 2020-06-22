@@ -119,7 +119,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
                         print(spotipyLogin.sp.devices())
                         print("Generic playback start failed. Attempting to specifically start UNIAC")
                         try:
-                            startPlayback = spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id)
+                            startPlayback = spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id)
                             print("succeeded -- no error.")
                             self.playStatusFlag = True
                             return startPlayback
@@ -128,8 +128,8 @@ class mpdGeneral: #general purpose class for MPD interfaces
                             time.sleep(1)
                         retryCount = retryCount+1
             else:
-                #spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id, context_uri=playlist['uri'], uris=[['item']['uri']])
-                if self.playStatusFull != None:
+                #spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id, context_uri=playlist['uri'], uris=[['item']['uri']])
+                if self.playStatusFull != None and self.playStatusFull['context'] != None:
                     print("No play status found. Loading playlist with context: {}".format(self.playStatusFull['context']))
                     self.loadPlaylist(self.playStatusFull['context'])
                 else:
@@ -164,19 +164,19 @@ class mpdGeneral: #general purpose class for MPD interfaces
             print("Attempted to select previous track but playback status returned none. No track to return to.")
         return -1
     def getPlaylists(self):
-        lists = spotipyLogin.sp.user_playlists(spotipyLogin.username)
+        lists = spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)
         print "# Playlists found:" + str(lists['total'])
         return lists
     def loadPlaylist(self, playlist):
         retryCount = 0
         while retryCount < 10:
             try:
-                spotipyLogin.sp.volume(0, device_id=spotipyLogin.uniac_id)
+                spotipyLogin.sp.volume(0, device_id=spotipyLogin.sp.uniac_id)
                 time.sleep(0.25)
-                spotipyLogin.sp.start_playback(device_id=spotipyLogin.uniac_id, context_uri=playlist['uri'])
-                spotipyLogin.sp.pause_playback(device_id=spotipyLogin.uniac_id)
+                spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id, context_uri=playlist['uri'])
+                spotipyLogin.sp.pause_playback(device_id=spotipyLogin.sp.uniac_id)
                 time.sleep(0.25)
-                spotipyLogin.sp.volume(100, device_id=spotipyLogin.uniac_id)
+                spotipyLogin.sp.volume(100, device_id=spotipyLogin.sp.uniac_id)
                 print("Loaded playlist successfully")
                 return
             except:
