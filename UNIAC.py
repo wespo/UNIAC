@@ -9,6 +9,9 @@ import sys
 import os
 import spotipyLogin
 import setproctitle
+import socket
+import fcntl
+import struct
 
 ##import sys
 ##logfilename = 'UNIAC.log'
@@ -395,15 +398,34 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
         self.buttonHandlers = {'playpause':self.playPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.defaultMenu = 'default'
         self.twelveHour = Config.readParam('twelveHour', True, True)
+        self.antiCathodePoisoning = Config.readParam('antiCathodePoisoning', True, True)
+        self.acp = 0
+        self.acpFlag = False
     def displayHandler(self):
-        if self.twelveHour:
-            timeNum = int(time.strftime('%I%M%S')) #%I for 12-hour mode
-            if time.strftime('%p') == 'PM':
-                nixie.setSpare(0,True)
+        if self.antiCathodePoisoning:
+            if (time.localtime().tm_min == 30) and (time.localtime().tm_sec < 1) and (self.acpFlag == False):
+                self.acp = 0
+                self.acpFlag = True
+        if self.acpFlag == True:
+            if self.acp < 100:
+                self.acp += 1
             else:
-                nixie.setSpare(0,False)
+                self.acp = 0
+                self.acpFlag = False
+            digits = range(0,6)
+            timeNum = int(''.join(str(offsDig) for offsDig in [(digit+int(round(time.time()%9)))%10 for digit in digits]))
+            if(timeNum < 100000):
+                timeNum = timeNum + 1000000 #add leading zeros for midnight so it shows 00 for hours (the 1 is offscreen)
         else:
-            timeNum = int(time.strftime('%H%M%S')) #%H for 24-hour mode
+            if self.twelveHour:
+                self.acp = 0
+                timeNum = int(time.strftime('%I%M%S')) #%I for 12-hour mode
+                if time.strftime('%p') == 'PM':
+                    nixie.setSpare(0,True)
+                else:
+                    nixie.setSpare(0,False)
+            else:
+                timeNum = int(time.strftime('%H%M%S')) #%H for 24-hour mode
         if(timeNum < 10000):
             timeNum = timeNum + 1000000 #add leading zeros for midnight so it shows 00 for hours (the 1 is offscreen)
         nixie.printTubes(timeNum, 2)
@@ -415,6 +437,47 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
             self.twelveHour = onOff
             Config.writeParam('twelveHour', self.twelveHour)
         return self.twelveHour
+    def antiCathodePoisoning(self, onOff):
+        if onOff == True or onOff == False:
+            self.antiCathodePoisoning = onOff
+            Config.writeParam('antiCathodePoisoning', self.antiCathodePoisoning)
+        return self.antiCathodePoisoning
+
+class ipAddress(mpdGeneral):
+    def __init__(self):
+        self.ticks = 0
+        self.tickTime = 0
+        self.defaultMenu = True
+        self.ip = '0.0.0.0.'.split('.')
+    def startHandler(self):
+        self.ip = (self.get_ip_address('wlan0')+'.').split('.')
+        print("Self.IP:" + str(self.ip))
+        self.ticks = 0
+        self.tickTime = round(time.time())
+        nixie.printTubes('', True)
+        nixie.printTubes('', True)
+    def stopHandler(self):
+        nixie.printTubes('', True)
+        nixie.printTubes('', True)
+    def get_ip_address(self, ifname):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        ipVal = socket.inet_ntoa(fcntl.ioctl(
+            s.fileno(),
+            0x8915,  # SIOCGIFADDR
+            struct.pack('256s', ifname[:15])
+        )[20:24])
+        return ipVal
+    def displayHandler(self):
+        if self.tickTime+1.5 < round(time.time()):
+            self.tickTime = round(time.time())
+            self.ticks += 1
+            if self.ticks > 4:
+                self.ticks = 0
+        ipNum = self.ip[self.ticks] #calendar
+        print("SubIP: " + ipNum)
+        nixie.printTubes(ipNum, 2)
+        nixie.printTubes(ipNum, 2)
+        nixie.colons(False)
 
 class nixieCalendar(nixieClock):
     def __init__(self):
@@ -646,6 +709,21 @@ class optionMenu (mpdGeneral, alarmGeneral):
             self.options[self.selected].setter(tempValue)
 
 
+# def callSetting(settingName, value):
+#     for menuItem in Menu.modes:
+#         if hasattr(menuItem, settingName):
+#             itemHandle = getattribute(menuItem,settingName)
+#             menuItem.itemHandle = value
+#             Config.writeParam(settingName, value)
+#     return value
+
+def callAntiCathodePoisoning(value=None):
+    retVal = value
+    for menuItem in Menu.modes:
+        if hasattr(menuItem, 'antiCathodePoisoning'):
+            retVal = menuItem.antiCathodePoisoning(value)
+    return retVal
+
 def callTwelveHour(value=None):
     retVal = value
     for menuItem in Menu.modes:
@@ -663,9 +741,10 @@ Menu.attachMode(selectPlaylist())       #playlists
 
 options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRandom),
            option('repeat', 0, 1, 0, mpdGeneral().getRepeat, mpdGeneral().setRepeat),
-           option('twelve hour mode', 0, 1, 1, callTwelveHour, callTwelveHour)] # each option is unique. Add each one to handle things. could be cleaner
+           option('twelve hour mode', 0, 1, 1, callTwelveHour, callTwelveHour),
+           option('cathode protection', 0, 1, 1, callAntiCathodePoisoning, callAntiCathodePoisoning)] # each option is unique. Add each one to handle things. could be cleaner
 Menu.attachMode(optionMenu(options))    #options
-
+Menu.attachMode(ipAddress())       #playlists
 # cycleCount = 0;
 # keepAliveTime = 0.5 #minutes
 cycleTime = 0.1 #seconds

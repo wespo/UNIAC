@@ -17,7 +17,7 @@ class menu:
         self.pressTime = int(time.time())
         self.button_lights = 7 #UNIAC 3.0 (MCP23008) #22 #UNIAC 2.0 #5 UNIAC 1.0
         self.button_light_status = True
-        self.button_timeout = 5
+        self.button_timeout = 10
         #temporary amplifier perma-on:
         self.amp = 17 #UNIAC-003? (Untested) 11# (single board -- questionably tested) 18 (Original)
         self.mcpAddress = 0x20
@@ -122,7 +122,8 @@ class menu:
                 time.sleep(0.5)
                 print "calling alarm announce"
                 eventFunction(True)
-        ps = self.modes[0].playStatus();
+        # ps = self.modes[0].playStatus();
+        ps = 1
         if ps == 1:
             GPIO.output(self.amp, True)
         elif ps == 0:
