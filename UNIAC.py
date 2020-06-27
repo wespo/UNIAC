@@ -397,6 +397,7 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
     def __init__(self):
         self.buttonHandlers = {'playpause':self.playPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.defaultMenu = 'default'
+        self.canonicalMenu = 'canonical'
         self.twelveHour = Config.readParam('twelveHour', True, True)
         self.antiCathodePoisoning = Config.readParam('antiCathodePoisoning', True, True)
         self.acp = 0
@@ -447,7 +448,7 @@ class ipAddress(mpdGeneral):
     def __init__(self):
         self.ticks = 0
         self.tickTime = 0
-        self.defaultMenu = True
+        self.defaultMenu = 'default'
         self.ip = '0.0.0.0.'.split('.')
     def startHandler(self):
         self.ip = (self.get_ip_address('wlan0')+'.').split('.')
@@ -492,19 +493,18 @@ class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / re
         self.buttonHandlers = {'playpause':self.statusPlayPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'select':self.changeDisplayMode, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.defaultMenu = 'default'
         self.displayMode = 'elapsed'
-    def startHandler(self):
-        if self.playStatus():
+    def setDefaultMenu(self):
+        if self.playStatus() == True:
             self.defaultMenu = 'default'
         else:
             if hasattr(self, 'defaultMenu'):
                 del self.defaultMenu
+    def startHandler(self):
+        self.setDefaultMenu()
     def statusPlayPause(self, direction):
         self.playPause(direction)
-        if self.playStatus():
-            self.defaultMenu = 'default'
-        else:
-            if hasattr(self, 'defaultMenu'):
-                del self.defaultMenu
+        self.setDefaultMenu()
+
     def displayHandler(self):
         [elapsedSeconds, totalSeconds] = self.clientTime()
         elapsedSeconds = int(round(elapsedSeconds/1000))

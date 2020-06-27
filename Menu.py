@@ -71,7 +71,7 @@ class menu:
             #we're going to have to change. Call
             #the stop handler if there is one
             self.modes[0].stopHandler()
-        while (hasattr(self.modes[0],'defaultMenu') == False):
+        while (hasattr(self.modes[0],'canonicalMenu') == False):
             if(direction == -1): #mode down (rotate array right)
                 self.modes.insert(0, self.modes.pop())
             elif(direction == 1): #mode up (rotate array left)
