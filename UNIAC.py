@@ -16,36 +16,22 @@ import struct
 ##import sys
 ##logfilename = 'UNIAC.log'
 ##sys.stdout = open(logfilename, 'w')
-##print logfilename
-
+##print(logfilename)
 setproctitle.setproctitle("UNIAC")
-
-configPath = '/home/pi/UNIAC/UNIAC.conf'
-
-print 'Starting UNIAC: The Ultimate Nixie Internet Alarm Clock'
-print 'Model: UNIAC-S1000-Portable'
-print 'Version: 3.0'
-
-if len(sys.argv) > 1:
-    if(sys.argv[1] == "autostart"):
-        print("starting mopidy and waiting 30 seconds")
-        os.popen('mopidy &')
-        time.sleep(30)
-
-def UNIACPS():
-    pythonProcesses = os.popen('ps -e | grep python').readlines()
-    pythonProcesses.pop()
-    for process in pythonProcesses:
-        psNum = str.split(process)[0]
-        print "killing: " + psNum
-        os.system('sudo kill ' + psNum)
-
-#UNIACPS()
 
 nixie = nixieDisplay.Nixie()
 nixie.dimTubes(75)
 nixie.stopAllBlinking()
 nixie.setAllFade(True)
+
+nixie.printTubes('999999')
+spotipyLogin.sp = spotipyLogin.login()
+
+configPath = '/home/pi/UNIAC/UNIAC.conf'
+
+print('Starting UNIAC: The Ultimate Nixie Internet Alarm Clock')
+print('Model: UNIAC-S1000-Portable')
+print('Version: 3.0')
 
 #setup menu system
 Menu = MenuClass.menu()
@@ -61,14 +47,14 @@ def announce(message, block = False):
         blockString = '\"'
     else:
         blockString = '\" &'
-    print message
+    print(message)
     newMessage = 'sudo espeak -ven+f3 -k5 -a150 -p20 -s120 \"' + message + blockString
     os.system(newMessage)
 
 def announcePlaylist(message, block = False): #cleans up playlist name string
     message = message.encode('ascii','ignore')
     re.sub("\s\s+"," ", message)
-    print message
+    print(message)
     parenIndex = message.find('(')
     if parenIndex > 0:
         message = message[0:parenIndex]
@@ -168,7 +154,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
         return -1
     def getPlaylists(self):
         lists = spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)
-        print "# Playlists found:" + str(lists['total'])
+        print("# Playlists found:" + str(lists['total']))
         return lists
     def loadPlaylist(self, playlist):
         retryCount = 0
@@ -200,7 +186,9 @@ class mpdGeneral: #general purpose class for MPD interfaces
             spotipyLogin.sp.shuffle(not sh_state)
         else:
             spotipyLogin.sp.shuffle(value)
-        return int(spotipyLogin.sp.current_playback()['shuffle_state'])
+        shs = int(spotipyLogin.sp.current_playback()['shuffle_state'])
+        Config.writeParam('shuffle_state', shs)
+        return shs
     def getRandom(self):
         return int(spotipyLogin.sp.current_playback()['shuffle_state'])
     def setRepeat(self, value): #-1 to toggle
@@ -208,10 +196,12 @@ class mpdGeneral: #general purpose class for MPD interfaces
         repeatLookup = {False:'off',True:'context'}
         if value == -1:
             spotipyLogin.sp.repeat(not repeatLookup[sh_state])
-            return int(not repeatLookup[sh_state])
+            repeatState = int(not repeatLookup[sh_state])
         else:
             spotipyLogin.sp.repeat(repeatLookup[value])
-            return int(value)
+            repeatState = int(value)
+        Config.writeParam('repeat_state', repeatState)
+        return repeatState
     def getRepeat(self):
         repeatLookup = {'off':False,'context':True,'track':True}
         return int(repeatLookup[spotipyLogin.sp.current_playback()['repeat_state']])
@@ -264,11 +254,11 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
             if alarm.alarmEnabled:
                 alarm.alarmEnabled = False
                 alarm.playing = False
-                print "Alarm Disabled"
+                print("Alarm Disabled")
                 nixie.setDecimal(0,False)
             else:
                 alarm.alarmEnabled = True
-                print "Alarm Enabled"
+                print("Alarm Enabled")
                 nixie.setDecimal(0,True)
     def snooze(self, direction):
         if direction == -1 and alarm.playing:
@@ -291,7 +281,7 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
     def alarmEvent(self, twelveHour, Trigger=False):
         #play alarm
         if Trigger:
-            print "Alarm Announce"
+            print("Alarm Announce")
             if twelveHour:
                 hour = int(time.strftime('%H'))
                 minute = int(time.strftime('%M'))
@@ -319,12 +309,12 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
                 announce("It is " +  time.strftime('%H, %M.'), True)
             self.play(-1)
             return False
-        #print str(time.localtime().tm_hour) + " " + str(time.localtime().tm_min) + " " + str(time.localtime().tm_sec) + " : " + str(alarm.hours) + " " + str(alarm.minutes) + " " + str(alarm.seconds) + " : " + str(alarm.playing) + " " + str(alarm.alarmEnabled)
+        #print(str(time.localtime().tm_hour) + " " + str(time.localtime().tm_min) + " " + str(time.localtime().tm_sec) + " : " + str(alarm.hours) + " " + str(alarm.minutes) + " " + str(alarm.seconds) + " : " + str(alarm.playing) + " " + str(alarm.alarmEnabled))
         if alarm.playing:
             return False
         elif time.localtime().tm_hour == alarm.hours and time.localtime().tm_min == alarm.minutes and time.localtime().tm_sec <= 2 and alarm.playing == False and alarm.alarmEnabled:
             alarm.playing = True
-            print "Alarm Trigger"
+            print("Alarm Trigger")
             return True
         return False
     def changeAlarmHours(self,direction):
@@ -399,6 +389,8 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
         self.defaultMenu = 'default'
         self.canonicalMenu = 'canonical'
         self.twelveHour = Config.readParam('twelveHour', True, True)
+        self.twelveHour = Config.readParam('shuffle_state', True, self.getRandom)
+        self.twelveHour = Config.readParam('repeat_state', True, self.getRepeat)
         self.antiCathodePoisoning = Config.readParam('antiCathodePoisoning', True, True)
         self.acp = 0
         self.acpFlag = False
@@ -591,23 +583,23 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
         nixie.colons(False)
     def changePlaylist(self,direction, announceChange=True):
         if direction == -1:
-            print "self.selected = " + str(self.selected)
-            print "self.playlist_name = " + self.playlists['items'][self.selected]['name']
-            print "self.playlists (#) = " + str(self.playlists['total'])
-            # print "List of playlists: "
-            # print controlClient.listplaylists()
-            print "loading..."
+            print("self.selected = " + str(self.selected))
+            print("self.playlist_name = " + self.playlists['items'][self.selected]['name'])
+            print("self.playlists (#) = " + str(self.playlists['total']))
+            # print("List of playlists: ")
+            # print(controlClient.listplaylists())
+            print("loading...")
             nixie.printTubes("101010")
             self.changingPlaylist = True
             self.loadPlaylist(self.playlists['items'][self.selected])
             self.playlistURI = self.playlists['items'][self.selected]['uri']
             Config.writeParam('playlistURI', self.playlistURI)
             self.prevSelected = self.selected
-            print "loaded"
+            print("loaded")
             self.changingPlaylist = False
             if announceChange:
                 announce("station changed", True)
-            print "done"
+            print("done")
     def startHandler(self):
         self.playState = self.canonicalPlayStatus()
         self.pause(-1)
@@ -754,7 +746,7 @@ while True:
     # cycleCount += 1
     # if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
     #     cycleCount = 0
-    #     print "Keep Alive"
+    #     print("Keep Alive")
     #     controlClient.keepAlive()
     #     statusClient.keepAlive()
     #     #displayClient.keepAlive()
