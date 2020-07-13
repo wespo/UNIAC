@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import nixieDisplay
+import smartNixie
 import time
 import re
 import pickle
@@ -25,34 +25,33 @@ configPath = '/home/pi/UNIAC/UNIAC.conf'
 print 'Starting UNIAC: The Ultimate Nixie Internet Alarm Clock'
 print 'Model: UNIAC-S1000-Portable'
 print 'Version: 3.0'
+#
+# if len(sys.argv) > 1:
+#     if(sys.argv[1] == "autostart"):
+#         print("starting mopidy and waiting 30 seconds")
+#         os.popen('mopidy &')
+#         time.sleep(30)
+#
+# def UNIACPS():
+#     pythonProcesses = os.popen('ps -e | grep python').readlines()
+#     pythonProcesses.pop()
+#     for process in pythonProcesses:
+#         psNum = str.split(process)[0]
+#         print "killing: " + psNum
+#         os.system('sudo kill ' + psNum)
 
-if len(sys.argv) > 1:
-    if(sys.argv[1] == "autostart"):
-        print("starting mopidy and waiting 30 seconds")
-        os.popen('mopidy &')
-        time.sleep(30)
-
-def UNIACPS():
-    pythonProcesses = os.popen('ps -e | grep python').readlines()
-    pythonProcesses.pop()
-    for process in pythonProcesses:
-        psNum = str.split(process)[0]
-        print "killing: " + psNum
-        os.system('sudo kill ' + psNum)
-
+# spotipyLogin.sp = spotipyLogin.login()
 #UNIACPS()
-
-nixie = nixieDisplay.Nixie()
+nixie = smartNixie.Nixie()
 nixie.dimTubes(75)
 nixie.stopAllBlinking()
-nixie.setAllFade(True)
 
 #setup menu system
 Menu = MenuClass.menu()
 
 #add buttons so menu system knows the hardware.
 #the 'name' addribute will be used as a lookup on child classes.
-buttons = {'plus':5, 'minus':6, 'mode':4, 'playpause':3, 'select':2,'snooze':1,'alarmenable':0} #list the physical buttons on the board
+buttons = {'plus':6, 'minus':12, 'mode':13, 'playpause':16, 'select':19,'snooze':20,'alarmenable':21} #list the physical buttons on the board
 #add buttons to the menu system
 Menu.addButtons(buttons)
 
@@ -355,10 +354,8 @@ class alarmClock (alarmGeneral, mpdGeneral):
                     localHours = 12
                 nixie.setSpare(0, False)
             nixie.printTubes(localHours*10000 + alarmTime['minutes']*100,2)
-            nixie.colons(True)
         else:
             nixie.printTubes(localHours*10000 + alarmTime['minutes']*100)
-            nixie.colons(True)
     def nextOption(self,direction):
         if direction == -1:
             nixie.stopBlinking(self.selected)
@@ -430,7 +427,7 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
         if(timeNum < 10000):
             timeNum = timeNum + 1000000 #add leading zeros for midnight so it shows 00 for hours (the 1 is offscreen)
         nixie.printTubes(timeNum, 2)
-        nixie.colons(True)
+        # nixie.colons(True)
     def stopHandler(self):
         nixie.setSpare(0,False)
     def twelveHourMode(self, onOff=None):
@@ -478,7 +475,7 @@ class ipAddress(mpdGeneral):
         print("SubIP: " + ipNum)
         nixie.printTubes(ipNum, 2)
         nixie.printTubes(ipNum, 2)
-        nixie.colons(False)
+
 
 class nixieCalendar(nixieClock):
     def __init__(self):
@@ -487,7 +484,7 @@ class nixieCalendar(nixieClock):
     def displayHandler(self):
         calNum = int(time.strftime('%m%d%y')) #calendar
         nixie.printTubes(calNum, 2)
-        nixie.colons(False)
+
 class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / remaining time)
     def __init__(self):
         self.buttonHandlers = {'playpause':self.statusPlayPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'select':self.changeDisplayMode, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
@@ -520,7 +517,7 @@ class mpdStatus(mpdGeneral, alarmGeneral):    #display song status (elapsed / re
         modSeconds = displaySeconds%60
         displayTime = displayMinutes*100 + modSeconds
         nixie.printTubes(displayTime, 2)
-        nixie.colons(False)
+
     def changeDisplayMode(self, direction):
         if direction == -1:
             if self.displayMode == 'elapsed':
@@ -588,7 +585,7 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
             announcePlaylist(self.playlists['items'][self.selected]['name'], True)
     def displayHandler(self):
         nixie.printTubes(self.selected)
-        nixie.colons(False)
+
     def changePlaylist(self,direction, announceChange=True):
         if direction == -1:
             print "self.selected = " + str(self.selected)
@@ -681,8 +678,8 @@ class optionMenu (mpdGeneral, alarmGeneral):
         disp = ''
         for option in self.options:
             disp = disp + str(max(int(option.value),0))
-        nixie.printTubes(disp)
-        nixie.colons(False)
+        nixie.printTubes(int(disp))
+
     def nextOption(self,direction):
         if direction == -1:
             nixie.stopBlinking(self.selected)
@@ -747,7 +744,7 @@ Menu.attachMode(optionMenu(options))    #options
 Menu.attachMode(ipAddress())       #playlists
 # cycleCount = 0;
 # keepAliveTime = 0.5 #minutes
-cycleTime = 0.1 #seconds
+cycleTime = 0.2 #seconds
 while True:
     time.sleep(cycleTime)
     Menu.displayUpdate(); #update the display
