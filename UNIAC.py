@@ -110,12 +110,14 @@ class mpdGeneral: #general purpose class for MPD interfaces
         if direction == -1:
             retryCount = 0
             currentPlayback = spotipyLogin.sp.current_playback()
-            print(currentPlayback)
+            print("Current playback status:")
+            # print(currentPlayback)
             if currentPlayback != None:
+                print("Attempting to start playback.")
                 try:
                     startPlayback = spotipyLogin.sp.start_playback()
                     self.playStatusFlag = True
-                    print("playback start succeeded")
+                    print("Playback start succeeded")
                 except:
                     while retryCount < 10:
                         print(spotipyLogin.sp.devices())
@@ -142,16 +144,18 @@ class mpdGeneral: #general purpose class for MPD interfaces
     def pause(self, direction, pauseIfPlaying=False):
         self.playStatusFlag = False
         self.canonicalPlayStatus()
+        print("Attepmting to pause playback.")
         currentPlayback = spotipyLogin.sp.current_playback()
-        print(currentPlayback)
+        # print(currentPlayback)
         if (currentPlayback != None) and (direction == -1):
             spotipyLogin.sp.pause_playback()
         else:
             print("Attempted to pause but playback status returned none. Playback is already paused.")
+        print("Playback paused.")
         return -1
     def nextTrack(self, direction):
         currentPlayback = spotipyLogin.sp.current_playback()
-        print(currentPlayback)
+        # print(currentPlayback)
         if (currentPlayback != None) and (direction == -1):
             spotipyLogin.sp.next_track()
         else:
@@ -159,7 +163,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
         return -1
     def previousTrack(self, direction):
         currentPlayback = spotipyLogin.sp.current_playback()
-        print(currentPlayback)
+        # print(currentPlayback)
         if (currentPlayback != None) and (direction == -1):
             spotipyLogin.sp.previous_track()
         else:
