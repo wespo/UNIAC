@@ -82,7 +82,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
     playStatusFull = None
     playLastTimeChecked = 0
     def playStatus(self):
-        if time.time() > (self.playLastTimeChecked + (5 * 60)):
+        if time.time() > (self.playLastTimeChecked + (1 * 60)):
             #print("Timeout, checking canonical play status.")
             return self.canonicalPlayStatus()
         else:

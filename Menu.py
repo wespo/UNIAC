@@ -2,6 +2,7 @@
 import RPi.GPIO as GPIO
 import time
 from MCP230XX import MCP230XX as MCP230XX
+import os
 
 version = "0.04"
 
@@ -22,7 +23,7 @@ class menu:
         self.amp = 17 #UNIAC-003? (Untested) 11# (single board -- questionably tested) 18 (Original)
         self.mcpAddress = 0x20
         self.intPin = 4
-
+        self.shdnPin = 22
         self.MCP = MCP230XX('MCP23008', self.mcpAddress, '16bit')
         self.MCP.interrupt_options(outputType = 'activehigh', bankControl = 'separate')
 
@@ -36,12 +37,28 @@ class menu:
         #interrupts
         GPIO.setup(self.intPin,GPIO.IN)
         GPIO.add_event_detect(self.intPin,GPIO.RISING,callback=self.MCP.callbackA)
+        GPIO.setup(self.shdnPin,GPIO.IN)
+        GPIO.add_event_detect(self.intPin,GPIO.RISING,callback=self.shdn)
         try:
             self.MCP.callbackA(1) #fixes hung up library due to unserviced interrupt
         except:
             print("No unserviced interrupts. Yay!")
+        self.startup()
 
+    #shutdown handler
+    def shdn(self, item):
+        print("Shutting down, at the command of the soft power down subsystem...")
+        os.system("sudo shutdown -h now")
+    def startup(self):
+        powerPins = {'nixie_en':23, 'nixie_hven':25, 'vu_en':24, 'vu_hven':12} #gpio for power up
+        for powerPin in powerPins:
+            print("Powering up " + powerPin)
+            pin = powerPins[powerPin]
+            GPIO.setup(pin,GPIO.OUT)
+            GPIO.output(pin, True)
+            time.sleep(0.1)
 
+        
     #mode handlers
     def attachMode(self, item):
         self.modes.append(item)
@@ -102,6 +119,7 @@ class menu:
         elif self.buttons[channel] in self.modes[0].buttonHandlers.keys():
             self.systemLock = True
             self.modes[0].buttonHandlers[self.buttons[channel]](-1)
+        elif channel == 
         self.systemLock = False
         time.sleep(0.1)
     def buttonRead(self, channel):
@@ -123,6 +141,7 @@ class menu:
                 print "calling alarm announce"
                 eventFunction(True)
         # ps = self.modes[0].playStatus();
+        self.modes[0].playStatus()
         ps = 1
         if ps == 1:
             GPIO.output(self.amp, True)
