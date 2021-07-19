@@ -52,8 +52,8 @@ class menu:
         print("Shutting down, at the command of the soft power down subsystem...")
         os.system("sudo shutdown -h now")
     def startup(self):
-        powerPins = {'nixie_hven':[25,2], 'nixie_en':[23,2], 'vu_en':[24,5], 'vu_hven':[12,2]} #gpio for power up
-        for powerPin in ['nixie_en','vu_hven','vu_en','nixie_hven']:
+        powerPins = {'nixie_hven':[25,1], 'nixie_en':[23,1], 'vu_en':[24,5], 'vu_hven':[12,1]} #gpio for power up
+        for powerPin in ['vu_hven','nixie_hven','nixie_en','vu_en']:
             print("Powering up " + powerPin)
             pin = powerPins[powerPin][0]
             GPIO.setup(pin,GPIO.OUT)
