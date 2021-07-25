@@ -75,20 +75,66 @@ def announcePlaylist(message, block = False): #cleans up playlist name string
     message = ' '.join(str.split(message)[0:4])
     announce(message, block)
 
-#start connections to Mopidy
+#classes
+class UNIACConfig:
+    def __init__(self, path=configPath):
+        self.path = path
+        if os.path.isfile(self.path):
+            confFileStream = open(self.path, 'r')
+            self.conf = pickle.load(confFileStream)
+            confFileStream.close()
+        else:
+            self.conf = {}
+    def readParam(self, param):
+        if param in self.conf:
+            return self.conf[param]
+        else:
+            return None
+    def writeParam(self, param, value):
+        self.conf[param] = value
+        self.storeConfig()
+    def storeConfig(self):
+        confFileStream = open(self.path, 'w')
+        pickle.dump(self.conf, confFileStream)
+
+Config = UNIACConfig()
+
+class alarmInfo:
+    def __init__(self):
+        self.settings = Config.readParam('alarm')
+        if self.settings == None:
+            self.settings = {'hours':0,'minutes':0,'seconds':0,'alarmEnabled':False,'snoozeTime':10,'playing':False}
+alarm = alarmInfo()
+#special instance, fuck me. There has to be a better way to do this.
+#alarm must be consistent and the same from all menu page classes,
+#meaning they must all inherit from AlarmGeneral
 
 class mpdGeneral: #general purpose class for MPD interfaces
     playStatusFlag = False
     playStatusFull = None
     playLastTimeChecked = 0
+    playStatus = Config.readParam('spotifyStatus')
+    if playStatus == None:
+        playStatus = spotipyLogin.sp.current_playback()
+        Config.writeParam('spotifyStatus',playStatus)
     def playStatus(self):
         if time.time() > (self.playLastTimeChecked + (1 * 60)):
             #print("Timeout, checking canonical play status.")
             return self.canonicalPlayStatus()
         else:
             return self.playStatusFlag
+    def canonicalPlayObj(self):
+        status = spotipyLogin.sp.current_playback()
+        if status == None:
+            firstPlaylistURI = spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)['items'][0]['uri']
+            self.loadPlaylist(firstPlaylistURI)
+            status = spotipyLogin.sp.currentPlayback()
+            print("No playlist found active, loaded first playlist. Playback status is:")
+            print(status)
+            Config.writeParam('spotifyStatus',status)
+        return status
     def canonicalPlayStatus(self):
-        playStatusRecv = spotipyLogin.sp.current_playback()
+        playStatusRecv = self.canonicalPlayObj()
         self.playLastTimeChecked = time.time()
         if playStatusRecv != None:
             playStatus = playStatusRecv['is_playing']
@@ -110,8 +156,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
         print("Attempting to start playback")
         if direction == -1:
             retryCount = 0
-            currentPlayback = spotipyLogin.sp.current_playback()
-            print(currentPlayback)
+            currentPlayback = self.canonicalPlayObj()
             if currentPlayback != None:
                 try:
                     startPlayback = spotipyLogin.sp.start_playback()
@@ -143,24 +188,22 @@ class mpdGeneral: #general purpose class for MPD interfaces
     def pause(self, direction, pauseIfPlaying=False):
         self.playStatusFlag = False
         self.canonicalPlayStatus()
-        currentPlayback = spotipyLogin.sp.current_playback()
-        print(currentPlayback)
+        currentPlayback = self.canonicalPlayObj()
         if (currentPlayback != None) and (direction == -1):
             spotipyLogin.sp.pause_playback()
+            Config.writeParam('spotifyStatus',self.canonicalPlayObj())
         else:
             print("Attempted to pause but playback status returned none. Playback is already paused.")
         return -1
     def nextTrack(self, direction):
-        currentPlayback = spotipyLogin.sp.current_playback()
-        print(currentPlayback)
+        currentPlayback = self.canonicalPlayObj()
         if (currentPlayback != None) and (direction == -1):
             spotipyLogin.sp.next_track()
         else:
             print("Attempted to select next track but playback status returned none. No track to advance to.")
         return -1
     def previousTrack(self, direction):
-        currentPlayback = spotipyLogin.sp.current_playback()
-        print(currentPlayback)
+        currentPlayback = self.canonicalPlayObj()
         if (currentPlayback != None) and (direction == -1):
             spotipyLogin.sp.previous_track()
         else:
@@ -195,16 +238,16 @@ class mpdGeneral: #general purpose class for MPD interfaces
         else:
             return [0, 0]
     def setRandom(self, value): #-1 to toggle
-        sh_state = spotipyLogin.sp.current_playback()['shuffle_state']
+        sh_state = self.canonicalPlayObj()['shuffle_state']
         if value == -1:
             spotipyLogin.sp.shuffle(not sh_state)
         else:
             spotipyLogin.sp.shuffle(value)
-        return int(spotipyLogin.sp.current_playback()['shuffle_state'])
+        return int(self.canonicalPlayObj()['shuffle_state'])
     def getRandom(self):
-        return int(spotipyLogin.sp.current_playback()['shuffle_state'])
+        return int(self.canonicalPlayObj()['shuffle_state'])
     def setRepeat(self, value): #-1 to toggle
-        sh_state = spotipyLogin.sp.current_playback()['repeat_state']
+        sh_state = self.canonicalPlayObj()['repeat_state']
         repeatLookup = {False:'off',True:'context'}
         if value == -1:
             spotipyLogin.sp.repeat(not repeatLookup[sh_state])
@@ -214,80 +257,39 @@ class mpdGeneral: #general purpose class for MPD interfaces
             return int(value)
     def getRepeat(self):
         repeatLookup = {'off':False,'context':True,'track':True}
-        return int(repeatLookup[spotipyLogin.sp.current_playback()['repeat_state']])
-
-class UNIACConfig:
-    def __init__(self, path=configPath):
-        self.path = path
-        if os.path.isfile(self.path):
-            confFileStream = open(self.path, 'r')
-            self.conf = pickle.load(confFileStream)
-            confFileStream.close()
-        else:
-            self.conf = {}
-    def readParam(self, param, update = False, value = None):
-        if param in self.conf:
-            return self.conf[param]
-        elif update:
-            self.writeParam(param, value)
-            return value
-        else:
-            return None
-    def writeParam(self, param, value):
-        self.conf[param] = value
-        self.storeConfig()
-    def storeConfig(self):
-        confFileStream = open(self.path, 'w')
-        pickle.dump(self.conf, confFileStream)
-
-Config = UNIACConfig()
-
-class alarmInfo:
-    def __init__(self):
-        self.hours = Config.readParam('hours', True, 0)
-        self.minutes = Config.readParam('minutes', True, 0)
-        self.seconds = Config.readParam('seconds', True, 0)
-        self.alarmEnabled = Config.readParam('alarmEnabled', True, False)
-        self.snoozeTime = Config.readParam('snoozeTime', True, 10)
-        self.playing = Config.readParam('playing', True, False)
-alarm = alarmInfo()
-#special instance, fuck me. There has to be a better way to do this.
-#alarm must be consistent and the same from all menu page classes,
-#meaning they must all inherit from AlarmGeneral
+        return int(repeatLookup[self.canonicalPlayObj()['repeat_state']])
 
 class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
     def toggleAlarm(self, direction):
         if direction == -1:
-            if alarm.playing:
+            if alarm.settings['playing']:
                 self.pause(-1, True)
-                alarm.playing = False
-            if alarm.alarmEnabled:
-                alarm.alarmEnabled = False
-                alarm.playing = False
+                alarm.settings['playing'] = False
+            if alarm.settings['alarmEnabled']:
+                alarm.settings['alarmEnabled'] = False
+                alarm.settings['playing'] = False
                 print "Alarm Disabled"
                 nixie.setDecimal(0,False)
             else:
-                alarm.alarmEnabled = True
+                alarm.settings['alarmEnabled'] = True
                 print "Alarm Enabled"
                 nixie.setDecimal(0,True)
     def snooze(self, direction):
-        if direction == -1 and alarm.playing:
-            alarm.minutes = alarm.minutes + alarm.snoozeTime
-            if alarm.minutes >= 60:
-                alarm.hours = alarm.hours + 1
-                if alarm.minutes >= 24:
-                    alarm.hours = alarm.hours - 24
-            alarm.playing = False
+        if direction == -1 and alarm.settings['playing']:
+            alarm.settings['minutes'] = alarm.settings['minutes'] + alarm.settings['snoozeTime']
+            if alarm.settings['minutes'] >= 60:
+                alarm.settings['hours'] = alarm.settings['hours'] + 1
+                if alarm.settings['minutes'] >= 24:
+                    alarm.settings['hours'] = alarm.settings['hours'] - 24
+            alarm.settings['playing'] = False
             self.pause(-1, True)
     def setAlarmTime(self, hours, minutes, seconds):
-        alarm.hours = hours%24
-        alarm.minutes = minutes%60
-        alarm.seconds = seconds%60
-        Config.writeParam('hours', alarm.hours)
-        Config.writeParam('minutes', alarm.minutes)
-        Config.writeParam('seconds', alarm.seconds)
+        alarm.settings['hours'] = hours%24
+        alarm.settings['minutes'] = minutes%60
+        alarm.settings['seconds'] = seconds%60
+        Config.writeParam('alarm', alarm.settings)
     def getAlarmTime(self):
-        return {'hours':alarm.hours,'minutes':alarm.minutes,'seconds':alarm.seconds}
+        return alarm.settings
     def alarmEvent(self, twelveHour, Trigger=False):
         #play alarm
         if Trigger:
@@ -319,27 +321,30 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
                 announce("It is " +  time.strftime('%H, %M.'), True)
             self.play(-1)
             return False
-        #print str(time.localtime().tm_hour) + " " + str(time.localtime().tm_min) + " " + str(time.localtime().tm_sec) + " : " + str(alarm.hours) + " " + str(alarm.minutes) + " " + str(alarm.seconds) + " : " + str(alarm.playing) + " " + str(alarm.alarmEnabled)
-        if alarm.playing:
+        #print str(time.localtime().tm_hour) + " " + str(time.localtime().tm_min) + " " + str(time.localtime().tm_sec) + " : " + str(alarm.settings['hours']) + " " + str(alarm.settings['minutes']) + " " + str(alarm.settings['seconds']) + " : " + str(alarm.settings['playing']) + " " + str(alarm.settings['alarmEnabled'])
+        if alarm.settings['playing']:
             return False
-        elif time.localtime().tm_hour == alarm.hours and time.localtime().tm_min == alarm.minutes and time.localtime().tm_sec <= 2 and alarm.playing == False and alarm.alarmEnabled:
-            alarm.playing = True
+        elif time.localtime().tm_hour == alarm.settings['hours'] and time.localtime().tm_min == alarm.settings['minutes'] and time.localtime().tm_sec <= 2 and alarm.settings['playing'] == False and alarm.settings['alarmEnabled']:
+            alarm.settings['playing'] = True
             print "Alarm Trigger"
             return True
         return False
     def changeAlarmHours(self,direction):
         if direction == -1 or direction == 1:
-            self.setAlarmTime(alarm.hours + direction, alarm.minutes, alarm.seconds)
+            self.setAlarmTime(alarm.settings['hours'] + direction, alarm.settings['minutes'], alarm.settings['seconds'])
     def changeAlarmMinutes(self,direction):
         if direction == -1 or direction == 1 or direction == -10 or direction == 10:
-            self.setAlarmTime(alarm.hours, alarm.minutes + direction, alarm.seconds)
+            self.setAlarmTime(alarm.settings['hours'], alarm.settings['minutes'] + direction, alarm.settings['seconds'])
 
 #handl
 class alarmClock (alarmGeneral, mpdGeneral):
     def __init__(self):
         self.buttonHandlers = {'select':self.nextOption, 'minus':self.decValue,'plus':self.incValue, 'playpause':self.playPause,'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.selected = 1
-        self.alarmTwelveHour = Config.readParam('twelveHour', True, True)
+        self.alarmTwelveHour = Config.readParam('twelveHour')
+        if self.alarmTwelveHour == None:
+            self.alarmTwelveHour = True
+            Config.writeParam('alarmTwelveHour', True)
     def eventFunction(self, Trigger=False):
         return self.alarmEvent(self.alarmTwelveHour, Trigger)
     def displayHandler(self):
@@ -398,8 +403,13 @@ class nixieClock(mpdGeneral, alarmGeneral): #regular ol' clock
         self.buttonHandlers = {'playpause':self.playPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
         self.defaultMenu = 'default'
         self.canonicalMenu = 'canonical'
-        self.twelveHour = Config.readParam('twelveHour', True, True)
-        self.antiCathodePoisoning = Config.readParam('antiCathodePoisoning', True, True)
+        self.twelveHour = Config.readParam('twelveHour')
+        if self.twelveHour == None:
+            self.twelveHour = True
+            Config.writeParam('twelveHour',self.twelveHour)
+        self.antiCathodePoisoning = Config.readParam('antiCathodePoisoning')
+        if self.antiCathodePoisoning == None:
+            Config.writeParam('antiCathodePoisoning', True)
         self.acp = 0
         self.acpFlag = False
     def displayHandler(self):
@@ -483,7 +493,10 @@ class ipAddress(mpdGeneral):
 class nixieCalendar(nixieClock):
     def __init__(self):
         self.buttonHandlers = {'playpause':self.playPause, 'plus':self.nextTrack, 'minus':self.previousTrack, 'snooze':self.snooze, 'alarmenable':self.toggleAlarm}
-        self.twelveHour = Config.readParam('twelveHour', True, True)
+        self.twelveHour = Config.readParam('twelveHour')
+        if self.twelveHour == None:
+            self.twelveHour = True
+            Config.writeParam('twelveHour', True)
     def displayHandler(self):
         calNum = int(time.strftime('%m%d%y')) #calendar
         nixie.printTubes(calNum, 2)
@@ -739,21 +752,31 @@ Menu.attachMode(selectPlaylist())       #playlists
 #Menu.attachMode(selectStation())        #radio stations
 #Menu.modes.pop()
 
+
+#options to show:
+# -> shuffle
+# -> repeat
+# -> twelveHour
+# -> cathode
+
+
 options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRandom),
            option('repeat', 0, 1, 0, mpdGeneral().getRepeat, mpdGeneral().setRepeat),
            option('twelve hour mode', 0, 1, 1, callTwelveHour, callTwelveHour),
            option('cathode protection', 0, 1, 1, callAntiCathodePoisoning, callAntiCathodePoisoning)] # each option is unique. Add each one to handle things. could be cleaner
 Menu.attachMode(optionMenu(options))    #options
 Menu.attachMode(ipAddress())       #playlists
-# cycleCount = 0;
-# keepAliveTime = 0.5 #minutes
+cycleCount = 0;
+keepAliveTime = 0.5 #minutes
 cycleTime = 0.1 #seconds
 while True:
     time.sleep(cycleTime)
     Menu.displayUpdate(); #update the display
-    # cycleCount += 1
-    # if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
-    #     cycleCount = 0
+    cycleCount += 1
+    if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
+        Config.writeParam('spotifyStatus',spotipyLogin.sp.current_playback())
+        print(Config.readParam('spotifyStatus'))
+        cycleCount = 0
     #     print "Keep Alive"
     #     controlClient.keepAlive()
     #     statusClient.keepAlive()
