@@ -22,9 +22,9 @@ setproctitle.setproctitle("UNIAC")
 
 configPath = '/home/pi/UNIAC/UNIAC.conf'
 
-print 'Starting UNIAC: The Ultimate Nixie Internet Alarm Clock'
-print 'Model: UNIAC-S1000-Portable'
-print 'Version: 3.0'
+print('Starting UNIAC: The Ultimate Nixie Internet Alarm Clock')
+print('Model: UNIAC-S1000-Portable')
+print('Version: 3.0')
 
 if len(sys.argv) > 1:
     if(sys.argv[1] == "autostart"):
@@ -37,7 +37,7 @@ def UNIACPS():
     pythonProcesses.pop()
     for process in pythonProcesses:
         psNum = str.split(process)[0]
-        print "killing: " + psNum
+        print("killing: " + psNum)
         os.system('sudo kill ' + psNum)
 
 #UNIACPS()
@@ -61,14 +61,14 @@ def announce(message, block = False):
         blockString = '\"'
     else:
         blockString = '\" &'
-    print message
+    print(message)
     newMessage = 'sudo espeak -ven+f3 -k5 -a150 -p20 -s120 \"' + message + blockString
     os.system(newMessage)
 
 def announcePlaylist(message, block = False): #cleans up playlist name string
     message = message.encode('ascii','ignore')
     re.sub("\s\s+"," ", message)
-    print message
+    print(message)
     parenIndex = message.find('(')
     if parenIndex > 0:
         message = message[0:parenIndex]
@@ -125,13 +125,19 @@ class mpdGeneral: #general purpose class for MPD interfaces
             return self.playStatusFlag
     def canonicalPlayObj(self):
         status = spotipyLogin.sp.current_playback()
-        if status == None:
-            firstPlaylistURI = spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)['items'][0]['uri']
-            self.loadPlaylist(firstPlaylistURI)
-            status = spotipyLogin.sp.currentPlayback()
-            print("No playlist found active, loaded first playlist. Playback status is:")
-            print(status)
-            Config.writeParam('spotifyStatus',status)
+        # if status == None:
+        #     firstPlaylistURI = spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)['items'][0]['uri']
+        #     print("Playlist info:")
+        #     print(spotipyLogin.sp.user_playlists(spotipyLogin.sp.username))
+        #     print(spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)['items'])
+        #     print(spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)['items'][0])
+        #     print(spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)['items'][0]['uri'])
+        #     print("--------")
+        #     self.loadPlaylist(firstPlaylistURI)
+        #     status = spotipyLogin.sp.currentPlayback()
+        #     print("No playlist found active, loaded first playlist. Playback status is:")
+        #     print(status)
+        #     Config.writeParam('spotifyStatus',status)
         return status
     def canonicalPlayStatus(self):
         playStatusRecv = self.canonicalPlayObj()
@@ -211,7 +217,7 @@ class mpdGeneral: #general purpose class for MPD interfaces
         return -1
     def getPlaylists(self):
         lists = spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)
-        print "# Playlists found:" + str(lists['total'])
+        print("# Playlists found:" + str(lists['total']))
         return lists
     def loadPlaylist(self, playlist):
         retryCount = 0
@@ -219,13 +225,19 @@ class mpdGeneral: #general purpose class for MPD interfaces
             try:
                 spotipyLogin.sp.volume(0, device_id=spotipyLogin.sp.uniac_id)
                 time.sleep(0.25)
+                print("uniac id")
+                print(spotipyLogin.sp.uniac_id)
+                print("playlist")
+                print(playlist['uri'])
+                print("--------------")
                 spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id, context_uri=playlist['uri'])
                 spotipyLogin.sp.pause_playback(device_id=spotipyLogin.sp.uniac_id)
                 time.sleep(0.25)
                 spotipyLogin.sp.volume(100, device_id=spotipyLogin.sp.uniac_id)
                 print("Loaded playlist successfully")
                 return
-            except:
+            except Exception as e:
+                print(e)
                 print("warning: load failed. Retrying " + str(10-retryCount) + " more times.")
                 time.sleep(3)
             retryCount = retryCount+1
@@ -268,11 +280,11 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
             if alarm.settings['alarmEnabled']:
                 alarm.settings['alarmEnabled'] = False
                 alarm.settings['playing'] = False
-                print "Alarm Disabled"
+                print("Alarm Disabled")
                 nixie.setDecimal(0,False)
             else:
                 alarm.settings['alarmEnabled'] = True
-                print "Alarm Enabled"
+                print("Alarm Enabled")
                 nixie.setDecimal(0,True)
     def snooze(self, direction):
         if direction == -1 and alarm.settings['playing']:
@@ -293,7 +305,7 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
     def alarmEvent(self, twelveHour, Trigger=False):
         #play alarm
         if Trigger:
-            print "Alarm Announce"
+            print("Alarm Announce")
             if twelveHour:
                 hour = int(time.strftime('%H'))
                 minute = int(time.strftime('%M'))
@@ -326,7 +338,7 @@ class alarmGeneral (mpdGeneral): #stuff that all classes will need access to
             return False
         elif time.localtime().tm_hour == alarm.settings['hours'] and time.localtime().tm_min == alarm.settings['minutes'] and time.localtime().tm_sec <= 2 and alarm.settings['playing'] == False and alarm.settings['alarmEnabled']:
             alarm.settings['playing'] = True
-            print "Alarm Trigger"
+            print("Alarm Trigger")
             return True
         return False
     def changeAlarmHours(self,direction):
@@ -604,23 +616,23 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
         nixie.colons(False)
     def changePlaylist(self,direction, announceChange=True):
         if direction == -1:
-            print "self.selected = " + str(self.selected)
-            print "self.playlist_name = " + self.playlists['items'][self.selected]['name']
-            print "self.playlists (#) = " + str(self.playlists['total'])
+            print("self.selected = " + str(self.selected))
+            print("self.playlist_name = " + self.playlists['items'][self.selected]['name'])
+            print("self.playlists (#) = " + str(self.playlists['total']))
             # print "List of playlists: "
             # print controlClient.listplaylists()
-            print "loading..."
+            print("loading...")
             nixie.printTubes("101010")
             self.changingPlaylist = True
             self.loadPlaylist(self.playlists['items'][self.selected])
             self.playlistURI = self.playlists['items'][self.selected]['uri']
             Config.writeParam('playlistURI', self.playlistURI)
             self.prevSelected = self.selected
-            print "loaded"
+            print("loaded")
             self.changingPlaylist = False
             if announceChange:
                 announce("station changed", True)
-            print "done"
+            print("done")
     def startHandler(self):
         self.playState = self.canonicalPlayStatus()
         self.pause(-1)

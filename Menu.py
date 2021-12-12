@@ -140,7 +140,7 @@ class menu:
             if eventFunction():
                 GPIO.output(self.amp, True)
                 time.sleep(0.5)
-                print "calling alarm announce"
+                print("calling alarm announce")
                 eventFunction(True)
         # ps = self.modes[0].playStatus();
         self.modes[0].playStatus()
