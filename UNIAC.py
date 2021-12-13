@@ -12,6 +12,7 @@ import setproctitle
 import socket
 import fcntl
 import struct
+import pprint
 
 ##import sys
 ##logfilename = 'UNIAC.log'
@@ -113,10 +114,11 @@ class mpdGeneral: #general purpose class for MPD interfaces
     playStatusFlag = False
     playStatusFull = None
     playLastTimeChecked = 0
-    playStatus = Config.readParam('spotifyStatus')
-    if playStatus == None:
-        playStatus = spotipyLogin.sp.current_playback()
-        Config.writeParam('spotifyStatus',playStatus)
+    playStatus = spotipyLogin.sp.current_playback() #check current playback.
+    if playStatus == None: #nothing currently playing.
+        playStatus = Config.readParam('spotifyStatus') #check if the config loaded had a playlists
+        print("Loaded status is...")
+        print(playStatus)
     def playStatus(self):
         if time.time() > (self.playLastTimeChecked + (1 * 60)):
             #print("Timeout, checking canonical play status.")
@@ -150,6 +152,9 @@ class mpdGeneral: #general purpose class for MPD interfaces
             playStatus = False
         playStatusFlag = playStatus
         return playStatus
+    def loadFromStatus(self, status):
+        spotipyLogin.sp.start_playback(context_uri=status['item']['context']['uri'], uris=status['item']['uri'], offset=None, position_ms=status['item']['progress_ms'])
+
     def playPause(self, direction):
         if direction == -1:
             if self.playStatus():
@@ -787,6 +792,7 @@ while True:
     cycleCount += 1
     if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
         Config.writeParam('spotifyStatus',spotipyLogin.sp.current_playback())
+        print("Printing Status...")
         print(Config.readParam('spotifyStatus'))
         cycleCount = 0
     #     print "Keep Alive"
