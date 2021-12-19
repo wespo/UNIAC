@@ -114,17 +114,37 @@ class mpdGeneral: #general purpose class for MPD interfaces
     playStatusFlag = False
     playStatusFull = None
     playLastTimeChecked = 0
-    playStatus = spotipyLogin.sp.current_playback() #check current playback.
-    if playStatus == None: #nothing currently playing.
-        playStatus = Config.readParam('spotifyStatus') #check if the config loaded had a playlists
-        print("Loaded status is...")
-        print(playStatus)
+
+    def initPlayStatus():
+        currentStatus = spotipyLogin.sp.current_playback() #check current playback.
+        print("Current User Status:")
+        print(currentStatus)
+        if currentStatus == None: #nothing currently playing.
+            currentStatus = Config.readParam('spotifyStatus') #check if the config loaded had a playlists
+            print("No Current User Status, Param Status:")
+            print(currentStatus)
+        if currentStatus == None: #nothing in config... load first found playlist.
+            lists = spotipyLogin.sp.user_playlists(spotipyLogin.sp.username)
+            spotipyLogin.sp.volume(0, device_id=spotipyLogin.sp.uniac_id)
+            time.sleep(0.25)
+            spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id, context_uri=lists['items'][0]['uri'])
+            spotipyLogin.sp.pause_playback(device_id=spotipyLogin.sp.uniac_id)
+            time.sleep(0.25)
+            spotipyLogin.sp.volume(100, device_id=spotipyLogin.sp.uniac_id)
+            currentStatus = spotipyLogin.sp.current_playback() #check current playback.
+            print("No Param Status, Loading first user playlist:")
+            print(currentStatus)
+        return currentStatus
+
+    lastPlayStatus = initPlayStatus()
     def playStatus(self):
-        if time.time() > (self.playLastTimeChecked + (1 * 60)):
-            #print("Timeout, checking canonical play status.")
-            return self.canonicalPlayStatus()
+        # print(self.canonicalPlayObj().keys())
+        status = self.canonicalPlayObj()
+        if status == None:
+            self.playStatusFlag = False
         else:
-            return self.playStatusFlag
+            self.playStatusFlag = status['is_playing']
+        return self.playStatusFlag
     def canonicalPlayObj(self):
         status = spotipyLogin.sp.current_playback()
         # if status == None:
@@ -152,9 +172,20 @@ class mpdGeneral: #general purpose class for MPD interfaces
             playStatus = False
         playStatusFlag = playStatus
         return playStatus
-    def loadFromStatus(self, status):
-        spotipyLogin.sp.start_playback(context_uri=status['item']['context']['uri'], uris=status['item']['uri'], offset=None, position_ms=status['item']['progress_ms'])
-
+    def loadFromStatus(self, status, currentDevice = None):
+        print("status:")
+        print(status.keys())
+        print("status[context]:")
+        print(status['context'].keys())
+        print("status[context][uri]:")
+        print(status['context']['uri'])
+        print("status[item][uri]:")
+        print(status['item']['uri'])
+        spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id, uris=status['item']['uri'], offset=None, position_ms=status['progress_ms']) #context_uri=status['context']['uri']
+        if currentDevice == None:
+            spotipyLogin.sp.shuffle(status['shuffle_state'],device_id=spotipyLogin.sp.uniac_id)
+        else:
+            spotipyLogin.sp.shuffle(status['shuffle_state'])
     def playPause(self, direction):
         if direction == -1:
             if self.playStatus():
@@ -166,45 +197,27 @@ class mpdGeneral: #general purpose class for MPD interfaces
     def play(self, direction):
         print("Attempting to start playback")
         if direction == -1:
-            retryCount = 0
             currentPlayback = self.canonicalPlayObj()
-            if currentPlayback != None:
-                try:
-                    startPlayback = spotipyLogin.sp.start_playback()
-                    self.playStatusFlag = True
-                    print("playback start succeeded")
-                except:
-                    while retryCount < 10:
-                        print(spotipyLogin.sp.devices())
-                        print("Generic playback start failed. Attempting to specifically start UNIAC")
-                        try:
-                            startPlayback = spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id)
-                            print("succeeded -- no error.")
-                            self.playStatusFlag = True
-                            return startPlayback
-                        except:
-                            print("warning: connection failed. Retrying " + str(10-retryCount) + " more times.")
-                            time.sleep(1)
-                        retryCount = retryCount+1
+            if currentPlayback == None:
+                #load last known status
+                print("Play status was none... loading last saved status:")
+                print(self.lastPlayStatus)
+                self.loadFromStatus(self.lastPlayStatus)
+                startPlayback = spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id)
             else:
-                #spotipyLogin.sp.start_playback(device_id=spotipyLogin.sp.uniac_id, context_uri=playlist['uri'], uris=[['item']['uri']])
-                if self.playStatusFull != None and self.playStatusFull['context'] != None:
-                    print("No play status found. Loading playlist with context: {}".format(self.playStatusFull['context']))
-                    self.loadPlaylist(self.playStatusFull['context'])
-                else:
-                    print("No play status yet available. Please manually load (or initial startup). No playback started.")
+                startPlayback = spotipyLogin.sp.start_playback()
+            self.playStatusFlag = True
+            self.lastPlayStatus = self.canonicalPlayObj()
+            Config.writeParam('spotifyStatus',currentPlayback)
             return -1
         else:
             return -1
     def pause(self, direction, pauseIfPlaying=False):
-        self.playStatusFlag = False
-        self.canonicalPlayStatus()
-        currentPlayback = self.canonicalPlayObj()
-        if (currentPlayback != None) and (direction == -1):
+        status = self.canonicalPlayObj()
+        if status != None:
             spotipyLogin.sp.pause_playback()
-            Config.writeParam('spotifyStatus',self.canonicalPlayObj())
-        else:
-            print("Attempted to pause but playback status returned none. Playback is already paused.")
+            self.lastPlayStatus = status
+            Config.writeParam('spotifyStatus',status)
         return -1
     def nextTrack(self, direction):
         currentPlayback = self.canonicalPlayObj()
@@ -622,7 +635,7 @@ class selectPlaylist(mpdGeneral, alarmGeneral):
     def changePlaylist(self,direction, announceChange=True):
         if direction == -1:
             print("self.selected = " + str(self.selected))
-            print("self.playlist_name = " + self.playlists['items'][self.selected]['name'])
+            print("self.playlist_name = " + self.playlists['items'][self.selected]['name'].encode('utf-8'))
             print("self.playlists (#) = " + str(self.playlists['total']))
             # print "List of playlists: "
             # print controlClient.listplaylists()
@@ -784,18 +797,25 @@ options = [option('shuffle', 0, 1, 0, mpdGeneral().getRandom, mpdGeneral().setRa
 Menu.attachMode(optionMenu(options))    #options
 Menu.attachMode(ipAddress())       #playlists
 cycleCount = 0;
+tokenCount = 0;
 keepAliveTime = 0.5 #minutes
 cycleTime = 0.1 #seconds
+tokenTime = 60 #minutes
 while True:
     time.sleep(cycleTime)
     Menu.displayUpdate(); #update the display
     cycleCount += 1
+    tokenCount += 1
     if cycleCount >= (keepAliveTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
-        Config.writeParam('spotifyStatus',spotipyLogin.sp.current_playback())
-        print("Printing Status...")
-        print(Config.readParam('spotifyStatus'))
+        status = spotipyLogin.sp.current_playback()
+        if status != None:
+            Config.writeParam('spotifyStatus',status)
+            print("Printing Status...")
+            print(Config.readParam('spotifyStatus'))
+        else:
+            print("Status returned None!")
         cycleCount = 0
-    #     print "Keep Alive"
-    #     controlClient.keepAlive()
-    #     statusClient.keepAlive()
-    #     #displayClient.keepAlive()
+    if tokenCount >= (tokenTime * 60 / cycleTime): #when the number of requesite cycles has passed, keep connections alive.
+        print("It has been 60 minutes... Attempting to refresh token...")
+        spotipyLogin.refresh_token()
+        tokenCount = 0
