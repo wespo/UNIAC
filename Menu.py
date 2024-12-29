@@ -2,8 +2,9 @@
 import RPi.GPIO as GPIO
 import time
 from MCP230XX import MCP230XX as MCP230XX
+import os
 
-version = "0.03"
+version = "0.04"
 
 class menu:
     #class for system menu, rotates through menu items by calling changeMode(1 for button up, -1 for button down).
@@ -17,12 +18,12 @@ class menu:
         self.pressTime = int(time.time())
         self.button_lights = 7 #UNIAC 3.0 (MCP23008) #22 #UNIAC 2.0 #5 UNIAC 1.0
         self.button_light_status = True
-        self.button_timeout = 5
+        self.button_timeout = 10
         #temporary amplifier perma-on:
-        self.amp = 11# (single board) 18 (Original)
+        self.amp = 17 #UNIAC-003? (Untested) 11# (single board -- questionably tested) 18 (Original)
         self.mcpAddress = 0x20
         self.intPin = 4
-
+        self.shdnPin = 22
         self.MCP = MCP230XX('MCP23008', self.mcpAddress, '16bit')
         self.MCP.interrupt_options(outputType = 'activehigh', bankControl = 'separate')
 
@@ -33,10 +34,31 @@ class menu:
         #lights
         self.MCP.set_mode(self.button_lights,'output')
         self.MCP.output(self.button_lights, 1);
+        time.sleep(1);
+        self.MCP.output(self.button_lights, 0);
         #interrupts
         GPIO.setup(self.intPin,GPIO.IN)
         GPIO.add_event_detect(self.intPin,GPIO.RISING,callback=self.MCP.callbackA)
+        GPIO.setup(self.shdnPin,GPIO.IN)
+        GPIO.add_event_detect(self.shdnPin,GPIO.RISING,callback=self.shdn)
+        try:
+            self.MCP.callbackA(1) #fixes hung up library due to unserviced interrupt
+        except:
+            print("No unserviced interrupts. Yay!")
+        self.startup()
 
+    #shutdown handler
+    def shdn(self, item):
+        print("Shutting down, at the command of the soft power down subsystem...")
+        os.system("sudo shutdown -h now")
+    def startup(self):
+        powerPins = {'nixie_hven':[25,1], 'nixie_en':[23,1], 'vu_en':[24,5], 'vu_hven':[12,1]} #gpio for power up
+        for powerPin in ['vu_hven','nixie_hven','nixie_en','vu_en']:
+            print("Powering up " + powerPin)
+            pin = powerPins[powerPin][0]
+            GPIO.setup(pin,GPIO.OUT)
+            GPIO.output(pin, True)
+            time.sleep(powerPins[powerPin][1])
 
 
     #mode handlers
@@ -68,7 +90,7 @@ class menu:
             #we're going to have to change. Call
             #the stop handler if there is one
             self.modes[0].stopHandler()
-        while (hasattr(self.modes[0],'defaultMenu') == False):
+        while (hasattr(self.modes[0],'canonicalMenu') == False):
             if(direction == -1): #mode down (rotate array right)
                 self.modes.insert(0, self.modes.pop())
             elif(direction == 1): #mode up (rotate array left)
@@ -99,6 +121,7 @@ class menu:
         elif self.buttons[channel] in self.modes[0].buttonHandlers.keys():
             self.systemLock = True
             self.modes[0].buttonHandlers[self.buttons[channel]](-1)
+        # elif channel ==
         self.systemLock = False
         time.sleep(0.1)
     def buttonRead(self, channel):
@@ -117,9 +140,11 @@ class menu:
             if eventFunction():
                 GPIO.output(self.amp, True)
                 time.sleep(0.5)
-                print "calling alarm announce"
+                print("calling alarm announce")
                 eventFunction(True)
-        ps = self.modes[0].playStatus();
+        # ps = self.modes[0].playStatus();
+        self.modes[0].playStatus()
+        ps = 1
         if ps == 1:
             GPIO.output(self.amp, True)
         elif ps == 0:
